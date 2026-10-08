@@ -91,23 +91,34 @@ export function useCreateNote() {
     mutationFn: async (initialValues?: { title?: string; folderId?: string | null }): Promise<Note> => {
       if (!user) throw new Error('Not authenticated');
 
-      const { data, error } = await supabase
-        .from('notes')
-        .insert({
-          owner_id: user.id,
-          title: initialValues?.title?.trim() || 'Untitled',
-          content: { type: 'doc', content: [] } as Json,
-          content_text: '',
-          folder_id: initialValues?.folderId ?? null,
-        })
-        .select()
-        .single();
+      const id = crypto.randomUUID();
+      const newNote = {
+        id,
+        owner_id: user.id,
+        title: initialValues?.title?.trim() || 'Untitled',
+        content: { type: 'doc', content: [] } as Json,
+        content_text: '',
+        folder_id: initialValues?.folderId ?? null,
+      };
 
+      const { error } = await supabase.from('notes').insert(newNote);
       if (error) throw new Error(error.message);
-      return data;
+
+      return {
+        ...newNote,
+        version: 1,
+        is_pinned: false,
+        is_favorite: false,
+        is_archived: false,
+        deleted_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        search_vector: null,
+      };
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.setQueryData(['note', created.id], created);
     },
   });
 }
@@ -119,20 +130,17 @@ export function useUpdateNote() {
     mutationFn: async ({
       id,
       ...updates
-    }: NoteUpdate & { id: string }): Promise<Note> => {
-      const { data, error } = await supabase
+    }: NoteUpdate & { id: string }): Promise<void> => {
+      const { error } = await supabase
         .from('notes')
         .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
+        .eq('id', id);
 
       if (error) throw new Error(error.message);
-      return data;
     },
-    onSuccess: (updated) => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
-      queryClient.setQueryData(['note', updated.id], updated);
+      queryClient.invalidateQueries({ queryKey: ['note', variables.id] });
     },
   });
 }
@@ -141,19 +149,17 @@ export function useTrashNote() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (id: string): Promise<Note> => {
-      const { data, error } = await supabase
+    mutationFn: async (id: string): Promise<void> => {
+      const { error } = await supabase
         .from('notes')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', id)
-        .select()
-        .single();
+        .eq('id', id);
 
       if (error) throw new Error(error.message);
-      return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: ['note', id] });
     },
   });
 }
@@ -162,19 +168,17 @@ export function useRestoreNote() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (id: string): Promise<Note> => {
-      const { data, error } = await supabase
+    mutationFn: async (id: string): Promise<void> => {
+      const { error } = await supabase
         .from('notes')
         .update({ deleted_at: null })
-        .eq('id', id)
-        .select()
-        .single();
+        .eq('id', id);
 
       if (error) throw new Error(error.message);
-      return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: ['note', id] });
     },
   });
 }

@@ -522,3 +522,17 @@ grant execute on all routines in schema public to anon;
 alter default privileges in schema public grant all on tables to anon, authenticated;
 alter default privileges in schema public grant all on sequences to anon, authenticated;
 alter default privileges in schema public grant all on routines to anon, authenticated;
+
+
+-- ============================================================================
+-- 006_fix_notes_policies.sql : Direct owner check in notes policies
+-- ============================================================================
+
+drop policy if exists notes_select on notes;
+create policy notes_select on notes for select to authenticated
+  using (owner_id = auth.uid() or has_note_access(id, 'viewer'));
+
+drop policy if exists notes_update on notes;
+create policy notes_update on notes for update to authenticated
+  using (owner_id = auth.uid() or has_note_access(id, 'editor'))
+  with check (owner_id = auth.uid() or has_note_access(id, 'editor'));
