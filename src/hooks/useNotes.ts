@@ -3,12 +3,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import type { Database, Json } from '../types/database';
+import type { Tag } from './useTags';
 
-export type Note = Database['public']['Tables']['notes']['Row'];
+export type Note = Database['public']['Tables']['notes']['Row'] & {
+  tags?: Tag[];
+  folder?: { id: string; name: string } | null;
+};
 export type NoteUpdate = Database['public']['Tables']['notes']['Update'];
 
 export interface NoteFilter {
-  type?: 'all' | 'favorites' | 'archive' | 'trash';
+  type?: 'all' | 'favorites' | 'archive' | 'trash' | 'folder' | 'tag';
   folderId?: string | null;
   tagId?: string;
 }
@@ -21,7 +25,9 @@ export function useNotes(filter: NoteFilter = { type: 'all' }) {
     queryFn: async (): Promise<Note[]> => {
       if (!user) return [];
 
-      let query = supabase.from('notes').select('*');
+      let query = supabase
+        .from('notes')
+        .select('*, tags(id, name, color), folder:folders(id, name)');
 
       if (filter.type === 'trash') {
         query = query.not('deleted_at', 'is', null);
@@ -33,10 +39,19 @@ export function useNotes(filter: NoteFilter = { type: 'all' }) {
           query = query.eq('is_favorite', true);
         } else if (filter.type === 'archive') {
           query = query.eq('is_archived', true);
+        } else if (filter.type === 'folder' && filter.folderId) {
+          query = query.eq('folder_id', filter.folderId);
+        } else if (filter.type === 'tag' && filter.tagId) {
+          const { data: tagNoteIds } = await supabase
+            .from('note_tags')
+            .select('note_id')
+            .eq('tag_id', filter.tagId);
+          const ids = tagNoteIds?.map((t) => t.note_id) || [];
+          if (ids.length === 0) return [];
+          query = query.in('id', ids);
         }
-        // 'all' notes includes all active notes (both unarchived and archived)
 
-        if (filter.folderId !== undefined) {
+        if (filter.folderId !== undefined && filter.type !== 'folder') {
           if (filter.folderId === null) {
             query = query.is('folder_id', null);
           } else {
@@ -53,7 +68,7 @@ export function useNotes(filter: NoteFilter = { type: 'all' }) {
         throw new Error(error.message);
       }
 
-      return data || [];
+      return (data as Note[]) || [];
     },
     enabled: !!user,
   });
@@ -69,7 +84,7 @@ export function useNote(id?: string) {
 
       const { data, error } = await supabase
         .from('notes')
-        .select('*')
+        .select('*, tags(id, name, color), folder:folders(id, name)')
         .eq('id', id)
         .single();
 
@@ -77,7 +92,7 @@ export function useNote(id?: string) {
         throw new Error(error.message);
       }
 
-      return data;
+      return data as Note;
     },
     enabled: !!id && !!user,
   });
@@ -141,6 +156,31 @@ export function useUpdateNote() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
       queryClient.invalidateQueries({ queryKey: ['note', variables.id] });
+    },
+  });
+}
+
+export function useSetNoteFolder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      noteId,
+      folderId,
+    }: {
+      noteId: string;
+      folderId: string | null;
+    }): Promise<void> => {
+      const { error } = await supabase
+        .from('notes')
+        .update({ folder_id: folderId })
+        .eq('id', noteId);
+
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: ['note', variables.noteId] });
     },
   });
 }

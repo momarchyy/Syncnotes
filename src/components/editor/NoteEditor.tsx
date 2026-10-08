@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -17,7 +17,10 @@ import {
   AlertTriangle,
   AlertCircle,
   X,
-  CloudOff
+  CloudOff,
+  Folder,
+  Plus,
+  ChevronDown
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -30,8 +33,16 @@ import {
   useRestoreNote, 
   useDeleteNotePermanently,
   useCreateNote,
+  useSetNoteFolder,
   type Note
 } from '../../hooks/useNotes';
+import { useFolders } from '../../hooks/useFolders';
+import { 
+  useTags, 
+  useNoteTags, 
+  useAddTagToNote, 
+  useRemoveTagFromNote 
+} from '../../hooks/useTags';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
@@ -53,11 +64,31 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const restoreNote = useRestoreNote();
   const deletePermanently = useDeleteNotePermanently();
   const createNote = useCreateNote();
+  const setNoteFolder = useSetNoteFolder();
+  const { data: allFolders = [] } = useFolders();
+  const { data: allTags = [] } = useTags();
+  const { data: noteTags = [] } = useNoteTags(noteId);
+  const addTagToNote = useAddTagToNote();
+  const removeTagFromNote = useRemoveTagFromNote();
   const { success, error } = useToast();
 
   const [title, setTitle] = useState('');
   const [currentVersion, setCurrentVersion] = useState<number>(1);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+
+  // Folder & Tag dropdown open states
+  const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+
+  const availableTags = useMemo(() => {
+    const existingTagIds = new Set(noteTags.map((t) => t.id));
+    return allTags.filter((t) => !existingTagIds.has(t.id));
+  }, [allTags, noteTags]);
+
+  const currentFolder = useMemo(() => {
+    if (!note?.folder_id) return null;
+    return allFolders.find((f) => f.id === note.folder_id) || null;
+  }, [note?.folder_id, allFolders]);
 
   // Refs to prevent stale closures in callbacks and debounce handlers
   const versionRef = useRef<number>(1);
@@ -387,6 +418,35 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   // Banner Action: Keep My Edits
   const handleKeepLocalEdits = () => {
     setShowRemoteBanner(false);
+  };
+
+  const handleSelectFolder = async (folderId: string | null) => {
+    setFolderDropdownOpen(false);
+    try {
+      await setNoteFolder.mutateAsync({ noteId, folderId });
+      success(folderId ? 'Moved note to folder' : 'Removed note from folder');
+    } catch (err) {
+      error((err as Error).message);
+    }
+  };
+
+  const handleAddTag = async (tagId: string) => {
+    setTagDropdownOpen(false);
+    try {
+      await addTagToNote.mutateAsync({ noteId, tagId });
+      success('Tag added');
+    } catch (err) {
+      error((err as Error).message);
+    }
+  };
+
+  const handleRemoveTag = async (tagId: string) => {
+    try {
+      await removeTagFromNote.mutateAsync({ noteId, tagId });
+      success('Tag removed');
+    } catch (err) {
+      error((err as Error).message);
+    }
   };
 
   // Conflict Resolution: Keep Mine (Overwrite remote note with local version)
@@ -737,6 +797,134 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           className="w-full text-2xl font-bold bg-transparent text-slate-900 dark:text-white placeholder-slate-300 dark:placeholder-slate-600 focus:outline-none tracking-tight disabled:opacity-75"
         />
       </div>
+
+      {/* Note Meta Bar: Folder & Tags */}
+      {!isDeleted && (
+        <div className="px-6 pb-2.5 flex items-center gap-2 flex-wrap text-xs">
+          {/* Folder Selector Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setFolderDropdownOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+            >
+              <Folder className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span className="max-w-[130px] truncate font-medium">
+                {currentFolder ? currentFolder.name : 'No folder'}
+              </span>
+              <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+            </button>
+
+            {folderDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setFolderDropdownOpen(false)}
+                />
+                <div className="absolute left-0 mt-1 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg z-30 py-1.5 max-h-56 overflow-y-auto">
+                  <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Organize Note
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectFolder(null)}
+                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer ${
+                      !note.folder_id ? 'font-semibold text-indigo-600' : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <span>No folder (Root)</span>
+                  </button>
+                  {allFolders.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => handleSelectFolder(f.id)}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer ${
+                        note.folder_id === f.id
+                          ? 'font-semibold text-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30'
+                          : 'text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <Folder className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="truncate">{f.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Tags Chips */}
+          {noteTags.map((tag) => (
+            <span
+              key={tag.id}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium text-[11px]"
+              style={{
+                backgroundColor: `${tag.color}18`,
+                color: tag.color,
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: tag.color }}
+              />
+              #{tag.name}
+              <button
+                type="button"
+                onClick={() => handleRemoveTag(tag.id)}
+                className="hover:opacity-75 cursor-pointer ml-0.5"
+                title="Remove tag"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+
+          {/* Add Tag Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setTagDropdownOpen((v) => !v)}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 text-[11px] transition cursor-pointer"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Tag</span>
+            </button>
+
+            {tagDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setTagDropdownOpen(false)}
+                />
+                <div className="absolute left-0 mt-1 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg z-30 py-1.5 max-h-48 overflow-y-auto">
+                  <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Add Tag
+                  </div>
+                  {availableTags.length === 0 ? (
+                    <p className="px-3 py-2 text-[11px] text-slate-400 italic">No more tags</p>
+                  ) : (
+                    availableTags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => handleAddTag(tag.id)}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        <span className="truncate">#{tag.name}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Tiptap Toolbar */}
       {!isDeleted && <Toolbar editor={editor} />}

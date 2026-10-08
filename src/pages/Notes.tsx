@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, NavLink } from 'react-router-dom';
 import { 
   FileText, 
   Plus, 
@@ -7,11 +7,15 @@ import {
   Archive, 
   Trash2, 
   Search, 
-  Pin,
-  Sparkles,
-  Inbox
+  Pin, 
+  Sparkles, 
+  Inbox,
+  Folder as FolderIcon,
+  Tag as TagIcon
 } from 'lucide-react';
 import { useNotes, useCreateNote, useUpdateNote, useTrashNote, useRestoreNote, useDeleteNotePermanently, NoteFilter } from '../hooks/useNotes';
+import { useFolder, useFolderPath } from '../hooks/useFolders';
+import { useTag, useAddTagToNote } from '../hooks/useTags';
 import { NoteCard } from '../components/notes/NoteCard';
 import { NoteEditor } from '../components/editor/NoteEditor';
 import { useToast } from '../components/ui/Toast';
@@ -26,6 +30,7 @@ export function Notes() {
   const trashNote = useTrashNote();
   const restoreNote = useRestoreNote();
   const deletePermanently = useDeleteNotePermanently();
+  const addTagToNote = useAddTagToNote();
   const { success, error } = useToast();
 
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -35,8 +40,20 @@ export function Notes() {
     if (location.pathname.startsWith('/favorites')) return { type: 'favorites' };
     if (location.pathname.startsWith('/archive')) return { type: 'archive' };
     if (location.pathname.startsWith('/trash')) return { type: 'trash' };
+    if (location.pathname.startsWith('/folder/')) {
+      const parts = location.pathname.split('/folder/')[1]?.split('/');
+      return { type: 'folder', folderId: parts?.[0] };
+    }
+    if (location.pathname.startsWith('/tag/')) {
+      const parts = location.pathname.split('/tag/')[1]?.split('/');
+      return { type: 'tag', tagId: parts?.[0] };
+    }
     return { type: 'all' };
   }, [location.pathname]);
+
+  const { data: currentFolder } = useFolder(filter.type === 'folder' ? filter.folderId ?? undefined : undefined);
+  const { data: folderPath = [] } = useFolderPath(filter.type === 'folder' ? filter.folderId ?? undefined : undefined);
+  const { data: currentTag } = useTag(filter.type === 'tag' ? filter.tagId ?? undefined : undefined);
 
   const { data: notes = [], isLoading } = useNotes(filter);
 
@@ -54,7 +71,13 @@ export function Notes() {
 
   const handleCreateNote = async () => {
     try {
-      const newNote = await createNote.mutateAsync({ title: 'Untitled' });
+      const newNote = await createNote.mutateAsync({ 
+        title: 'Untitled',
+        folderId: filter.type === 'folder' ? filter.folderId : null,
+      });
+      if (filter.type === 'tag' && filter.tagId) {
+        await addTagToNote.mutateAsync({ noteId: newNote.id, tagId: filter.tagId });
+      }
       navigate(`/note/${newNote.id}`);
     } catch (err) {
       error((err as Error).message || 'Failed to create note');
@@ -69,6 +92,18 @@ export function Notes() {
         return { title: 'Archive', icon: Archive, color: 'text-indigo-500' };
       case 'trash':
         return { title: 'Trash', icon: Trash2, color: 'text-amber-500' };
+      case 'folder':
+        return { 
+          title: currentFolder ? currentFolder.name : 'Folder', 
+          icon: FolderIcon, 
+          color: 'text-indigo-600' 
+        };
+      case 'tag':
+        return { 
+          title: currentTag ? `#${currentTag.name}` : 'Tag', 
+          icon: TagIcon, 
+          color: currentTag ? currentTag.color : 'text-indigo-600' 
+        };
       default:
         return { title: 'All Notes', icon: FileText, color: 'text-indigo-600' };
     }
@@ -124,10 +159,27 @@ export function Notes() {
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center shadow-xs shrink-0">
             <PageIcon className={`w-5 h-5 ${pageInfo.color}`} />
           </div>
           <div>
+            {filter.type === 'folder' && folderPath.length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-0.5">
+                <NavLink to="/" className="hover:text-indigo-600 transition">Notes</NavLink>
+                {folderPath.map((item, idx) => (
+                  <React.Fragment key={item.id}>
+                    <span className="text-slate-300 dark:text-slate-600">/</span>
+                    {idx === folderPath.length - 1 ? (
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">{item.name}</span>
+                    ) : (
+                      <NavLink to={`/folder/${item.id}`} className="hover:text-indigo-600 transition">
+                        {item.name}
+                      </NavLink>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
             <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
               {pageInfo.title}
             </h1>
@@ -181,6 +233,10 @@ export function Notes() {
               <Archive className="w-8 h-8 text-indigo-400" />
             ) : filter.type === 'trash' ? (
               <Trash2 className="w-8 h-8 text-amber-400" />
+            ) : filter.type === 'folder' ? (
+              <FolderIcon className="w-8 h-8 text-indigo-400" />
+            ) : filter.type === 'tag' ? (
+              <TagIcon className="w-8 h-8 text-indigo-400" />
             ) : (
               <Inbox className="w-8 h-8 text-indigo-500" />
             )}
@@ -192,6 +248,10 @@ export function Notes() {
               ? 'No archived notes'
               : filter.type === 'trash'
               ? 'Trash is empty'
+              : filter.type === 'folder'
+              ? 'This folder is empty'
+              : filter.type === 'tag'
+              ? 'No notes with this tag'
               : searchQuery
               ? 'No matching notes found'
               : 'You have no notes yet'}
@@ -203,15 +263,19 @@ export function Notes() {
               ? 'Click the star icon on any note to add it to your favorites.'
               : filter.type === 'archive'
               ? 'Notes you archive are tucked away here safely.'
+              : filter.type === 'folder'
+              ? 'Add or move notes into this folder to keep your work organized.'
+              : filter.type === 'tag'
+              ? 'Assign tags to notes to categorize them across folders.'
               : 'Create your first note to start capturing your ideas and tasks.'}
           </p>
-          {filter.type === 'all' && !searchQuery && (
+          {(filter.type === 'all' || filter.type === 'folder' || filter.type === 'tag') && !searchQuery && (
             <button
               onClick={handleCreateNote}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium shadow-sm transition cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Create your first note</span>
+              <span>{filter.type === 'folder' ? 'Create note in this folder' : 'Create note'}</span>
             </button>
           )}
         </div>

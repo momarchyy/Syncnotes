@@ -1,6 +1,6 @@
 import React from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Pin, Star, Archive, Trash2, RotateCcw } from 'lucide-react';
+import { Pin, Star, Archive, Trash2, RotateCcw, Folder } from 'lucide-react';
 import type { Note } from '../../hooks/useNotes';
 
 interface NoteCardProps {
@@ -47,13 +47,19 @@ export function NoteCard({
     >
       {/* Header: Title and Quick Action Badges */}
       <div className="flex items-start justify-between gap-2 mb-1.5">
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
           <h3 className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-1">
             {note.title || 'Untitled'}
           </h3>
           {note.is_archived && !isDeleted && (
             <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-medium border border-slate-200 dark:border-slate-700">
               Archived
+            </span>
+          )}
+          {note.folder && !isDeleted && (
+            <span className="shrink-0 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-medium border border-indigo-100 dark:border-indigo-900/40">
+              <Folder className="w-2.5 h-2.5" />
+              {note.folder.name}
             </span>
           )}
         </div>
@@ -92,9 +98,31 @@ export function NoteCard({
       </div>
 
       {/* Snippet */}
-      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-3">
+      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2.5">
         {snippet}
       </p>
+
+      {/* Tags chips */}
+      {note.tags && note.tags.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+          {note.tags.map((tag) => (
+            <span
+              key={tag.id}
+              className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md font-medium"
+              style={{
+                backgroundColor: `${tag.color}15`,
+                color: tag.color,
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: tag.color }}
+              />
+              #{tag.name}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Footer: Date and Action Buttons */}
       <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800/80">
