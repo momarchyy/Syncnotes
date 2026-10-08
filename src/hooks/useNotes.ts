@@ -28,13 +28,12 @@ export function useNotes(filter: NoteFilter = { type: 'all' }) {
         query = query.is('deleted_at', null);
 
         if (filter.type === 'favorites') {
-          query = query.eq('is_favorite', true).eq('is_archived', false);
+          // Show all favorites regardless of archive status
+          query = query.eq('is_favorite', true);
         } else if (filter.type === 'archive') {
           query = query.eq('is_archived', true);
-        } else {
-          // 'all' notes
-          query = query.eq('is_archived', false);
         }
+        // 'all' notes includes all active notes (both unarchived and archived)
 
         if (filter.folderId !== undefined) {
           if (filter.folderId === null) {

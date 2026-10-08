@@ -47,9 +47,16 @@ export function NoteCard({
     >
       {/* Header: Title and Quick Action Badges */}
       <div className="flex items-start justify-between gap-2 mb-1.5">
-        <h3 className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-1 flex-1">
-          {note.title || 'Untitled'}
-        </h3>
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <h3 className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-1">
+            {note.title || 'Untitled'}
+          </h3>
+          {note.is_archived && !isDeleted && (
+            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-medium border border-slate-200 dark:border-slate-700">
+              Archived
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-1 shrink-0">
           {!isDeleted && onTogglePin && (
