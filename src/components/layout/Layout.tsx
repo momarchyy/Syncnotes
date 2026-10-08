@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { TopBar } from './TopBar';
 import { Sidebar } from './Sidebar';
+import { useNotesRealtime } from '../../hooks/useNotes';
 
 export function Layout() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  useNotesRealtime();
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">

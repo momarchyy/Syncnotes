@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
@@ -194,4 +195,37 @@ export function useDeleteNotePermanently() {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
   });
+}
+
+/**
+ * Global Realtime hook to keep notes lists in sync across tabs and devices.
+ * Automatically invalidates React Query 'notes' queries when any note is
+ * inserted, updated, or deleted in Supabase.
+ */
+export function useNotesRealtime() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`notes-realtime-list-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notes',
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['notes'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, queryClient]);
 }

@@ -15,9 +15,12 @@ import {
   Check, 
   Loader2,
   AlertTriangle,
+  AlertCircle,
+  X,
   CloudOff
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Toolbar } from './Toolbar';
 import { ConflictDialog } from './ConflictDialog';
 import { 
@@ -43,6 +46,7 @@ interface NoteEditorProps {
 
 export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: note, isLoading } = useNote(noteId);
   const updateNote = useUpdateNote();
   const trashNote = useTrashNote();
@@ -58,6 +62,8 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   // Refs to prevent stale closures in callbacks and debounce handlers
   const versionRef = useRef<number>(1);
   const titleRef = useRef<string>('');
+  const isDirtyRef = useRef(false);
+  const saveStatusRef = useRef<SaveStatus>('saved');
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const initialContentSetRef = useRef(false);
 
@@ -67,6 +73,10 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isResolvingConflict, setIsResolvingConflict] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
+  // Remote update banner state (Section 7.3: Realtime "changed elsewhere" banner)
+  const [incomingRemoteNote, setIncomingRemoteNote] = useState<Note | null>(null);
+  const [showRemoteBanner, setShowRemoteBanner] = useState(false);
+
   // Keep refs in sync with state
   useEffect(() => {
     versionRef.current = currentVersion;
@@ -75,6 +85,10 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   useEffect(() => {
     titleRef.current = title;
   }, [title]);
+
+  useEffect(() => {
+    saveStatusRef.current = saveStatus;
+  }, [saveStatus]);
 
   // Fetch the latest remote version when a conflict occurs
   const handleConflictDetected = useCallback(async () => {
@@ -157,7 +171,10 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           if (savedNote) {
             versionRef.current = savedNote.version;
             setCurrentVersion(savedNote.version);
+            isDirtyRef.current = false;
+            saveTimeoutRef.current = null;
             setSaveStatus('saved');
+            queryClient.setQueryData(['note', noteId], savedNote);
           }
         } catch (err) {
           if (!navigator.onLine) {
@@ -170,7 +187,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       }, 1500);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [noteId, note, handleConflictDetected, error]
+    [noteId, note, handleConflictDetected, error, queryClient]
   );
 
   const triggerSaveRef = useRef(triggerSave);
@@ -199,6 +216,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       },
     },
     onUpdate: ({ editor }) => {
+      isDirtyRef.current = true;
       triggerSaveRef.current(titleRef.current, editor.getJSON() as Json, editor.getText());
     },
   });
@@ -210,18 +228,34 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   // Sync state when note data loads
   useEffect(() => {
     if (note) {
-      setTitle(note.title);
-      titleRef.current = note.title;
-      setCurrentVersion(note.version);
-      versionRef.current = note.version;
+      if (!initialContentSetRef.current) {
+        setTitle(note.title);
+        titleRef.current = note.title;
+        setCurrentVersion(note.version);
+        versionRef.current = note.version;
 
-      if (editor && !initialContentSetRef.current) {
-        if (note.content && typeof note.content === 'object' && Object.keys(note.content).length > 0) {
-          editor.commands.setContent(note.content as JSONContent);
-        } else {
-          editor.commands.setContent('');
+        if (editor) {
+          if (note.content && typeof note.content === 'object' && Object.keys(note.content).length > 0) {
+            editor.commands.setContent(note.content as JSONContent, false);
+          } else {
+            editor.commands.setContent('', false);
+          }
+          initialContentSetRef.current = true;
         }
-        initialContentSetRef.current = true;
+      } else if (!isDirtyRef.current && saveStatusRef.current === 'saved' && note.version > versionRef.current) {
+        // Silently update if local has no unsaved changes and remote version is newer
+        setTitle(note.title);
+        titleRef.current = note.title;
+        setCurrentVersion(note.version);
+        versionRef.current = note.version;
+
+        if (editor) {
+          if (note.content && typeof note.content === 'object' && Object.keys(note.content).length > 0) {
+            editor.commands.setContent(note.content as JSONContent, false);
+          } else {
+            editor.commands.setContent('', false);
+          }
+        }
       }
     }
   }, [note, editor]);
@@ -231,6 +265,9 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     initialContentSetRef.current = false;
     setConflictOpen(false);
     setRemoteNote(null);
+    setIncomingRemoteNote(null);
+    setShowRemoteBanner(false);
+    isDirtyRef.current = false;
     setSaveStatus('saved');
   }, [noteId]);
 
@@ -251,10 +288,105 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   }, [saveStatus, triggerSave]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    isDirtyRef.current = true;
     const newTitle = e.target.value;
     setTitle(newTitle);
     titleRef.current = newTitle;
     triggerSave(newTitle);
+  };
+
+  // Realtime subscription for live updates from another device/tab (Section 7.3)
+  useEffect(() => {
+    if (!noteId) return;
+
+    const channel = supabase
+      .channel(`note-editor-realtime-${noteId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notes',
+          filter: `id=eq.${noteId}`,
+        },
+        (payload) => {
+          const incoming = payload.new as Note;
+          if (!incoming || incoming.id !== noteId) return;
+
+          // Ignore echoes of our own saves or equal/older versions
+          if (incoming.version <= versionRef.current) {
+            return;
+          }
+
+          // Check if local has unsaved changes
+          const hasUnsavedChanges = 
+            isDirtyRef.current || 
+            saveStatusRef.current === 'saving' || 
+            saveTimeoutRef.current !== null;
+
+          if (!hasUnsavedChanges) {
+            // Silently replace content without disrupting user
+            versionRef.current = incoming.version;
+            setCurrentVersion(incoming.version);
+            setTitle(incoming.title);
+            titleRef.current = incoming.title;
+
+            if (editorRef.current) {
+              if (incoming.content && typeof incoming.content === 'object' && Object.keys(incoming.content).length > 0) {
+                editorRef.current.commands.setContent(incoming.content as JSONContent, false);
+              } else {
+                editorRef.current.commands.setContent('', false);
+              }
+            }
+
+            queryClient.setQueryData(['note', noteId], incoming);
+          } else {
+            // Local changes exist -> do not clobber user text! Show banner instead
+            setIncomingRemoteNote(incoming);
+            setShowRemoteBanner(true);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [noteId, queryClient]);
+
+  // Banner Action: Accept Remote Update (Reload Latest)
+  const handleAcceptRemoteUpdate = () => {
+    if (!incomingRemoteNote) return;
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
+    versionRef.current = incomingRemoteNote.version;
+    setCurrentVersion(incomingRemoteNote.version);
+    setTitle(incomingRemoteNote.title);
+    titleRef.current = incomingRemoteNote.title;
+
+    if (editorRef.current) {
+      if (incomingRemoteNote.content && typeof incomingRemoteNote.content === 'object' && Object.keys(incomingRemoteNote.content).length > 0) {
+        editorRef.current.commands.setContent(incomingRemoteNote.content as JSONContent, false);
+      } else {
+        editorRef.current.commands.setContent('', false);
+      }
+    }
+
+    isDirtyRef.current = false;
+    setSaveStatus('saved');
+    setShowRemoteBanner(false);
+    setIncomingRemoteNote(null);
+    queryClient.setQueryData(['note', noteId], incomingRemoteNote);
+    success('Loaded latest version from database.');
+  };
+
+  // Banner Action: Keep My Edits
+  const handleKeepLocalEdits = () => {
+    setShowRemoteBanner(false);
   };
 
   // Conflict Resolution: Keep Mine (Overwrite remote note with local version)
@@ -557,6 +689,42 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           )}
         </div>
       </div>
+
+      {/* Remote update banner when note is changed elsewhere while having unsaved edits */}
+      {showRemoteBanner && incomingRemoteNote && (
+        <div className="mx-6 mt-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-100 shadow-xs animate-in fade-in slide-in-from-top-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="truncate">
+              <strong>Changed on another device (v{incomingRemoteNote.version}):</strong> Remote updates are available.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleAcceptRemoteUpdate}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg shadow-xs transition cursor-pointer"
+            >
+              Reload Latest
+            </button>
+            <button
+              type="button"
+              onClick={handleKeepLocalEdits}
+              className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 font-medium rounded-lg transition cursor-pointer"
+            >
+              Keep My Edits
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRemoteBanner(false)}
+              className="p-1 text-amber-600 dark:text-amber-400 hover:bg-amber-200/50 dark:hover:bg-amber-800/50 rounded-lg cursor-pointer"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Title Input */}
       <div className="px-6 pt-4 pb-2">
