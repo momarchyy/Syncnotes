@@ -11,8 +11,10 @@ import {
   X,
   Check, 
   Eye, 
-  EyeOff
+  EyeOff,
+  Loader2,
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import type { StrokeData } from './DrawingCanvas';
 
 interface NoteAnnotationLayerProps {
@@ -68,41 +70,137 @@ export function NoteAnnotationLayer({
     height: 0,
   });
 
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [showSavedFeedback, setShowSavedFeedback] = useState<boolean>(false);
+  const [drawingRecordId, setDrawingRecordId] = useState<string | null>(null);
+
   const isDrawingRef = useRef<boolean>(false);
   const currentStrokeRef = useRef<StrokeData | null>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Storage key for per-note annotation strokes
+  // Storage key for per-note annotation strokes (offline fallback)
   const storageKey = `syncnotes_annotation_${noteId}`;
 
-  // Load annotations from localStorage
+  // 1. Load annotations from Cloud (Supabase drawings table where width=9999 sentinel for annotations)
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setStrokes(parsed);
-        setHistory([parsed]);
-        setHistoryIndex(0);
-      } else {
-        setStrokes([]);
-        setHistory([[]]);
-        setHistoryIndex(0);
-      }
-    } catch {
-      setStrokes([]);
-    }
-  }, [storageKey]);
+    let isMounted = true;
+    async function loadCloudAnnotations() {
+      try {
+        const { data, error } = await supabase
+          .from('drawings')
+          .select('*')
+          .eq('note_id', noteId)
+          .eq('width', 9999) // 9999 marks annotation layers
+          .maybeSingle();
 
-  // Save annotations to localStorage
+        if (error) throw error;
+
+        if (data && isMounted) {
+          setDrawingRecordId(data.id);
+          const loadedStrokes = (data.strokes as unknown as StrokeData[]) || [];
+          setStrokes(loadedStrokes);
+          setHistory([loadedStrokes]);
+          setHistoryIndex(0);
+          return;
+        }
+
+        // Fallback to local storage if no cloud record yet
+        const saved = localStorage.getItem(storageKey);
+        if (saved && isMounted) {
+          const parsed = JSON.parse(saved);
+          setStrokes(parsed);
+          setHistory([parsed]);
+          setHistoryIndex(0);
+        }
+      } catch (err) {
+        console.error('Failed to load annotations from cloud:', err);
+      }
+    }
+
+    if (noteId) {
+      loadCloudAnnotations();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [noteId, storageKey]);
+
+  // 2. Realtime sync subscription for cloud annotations
+  useEffect(() => {
+    if (!drawingRecordId) return;
+
+    const channel = supabase
+      .channel(`annotation-${drawingRecordId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'drawings',
+          filter: `id=eq.${drawingRecordId}`,
+        },
+        (payload) => {
+          if (!isDrawingRef.current && payload.new) {
+            const remoteStrokes = (payload.new.strokes as unknown as StrokeData[]) || [];
+            setStrokes(remoteStrokes);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [drawingRecordId]);
+
+  // 3. Debounced save to Supabase Cloud & localStorage
   const saveStrokes = useCallback(
     (newStrokes: StrokeData[]) => {
+      // Always persist locally immediately
       try {
         localStorage.setItem(storageKey, JSON.stringify(newStrokes));
-      } catch (err) {
-        console.error('Failed to save annotation strokes:', err);
+      } catch {
+        // ignore
       }
+
+      if (readOnly) return;
+      setIsSaving(true);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+      saveTimeoutRef.current = setTimeout(async () => {
+        try {
+          if (drawingRecordId) {
+            await supabase
+              .from('drawings')
+              .update({ strokes: newStrokes as any })
+              .eq('id', drawingRecordId);
+          } else {
+            // First time saving annotations to cloud for this note
+            const { data } = await supabase
+              .from('drawings')
+              .insert({
+                note_id: noteId,
+                strokes: newStrokes as any,
+                width: 9999, // Annotation layer sentinel
+                height: 9999,
+              })
+              .select('id')
+              .single();
+
+            if (data) {
+              setDrawingRecordId(data.id);
+            }
+          }
+          setShowSavedFeedback(true);
+          setTimeout(() => setShowSavedFeedback(false), 1500);
+        } catch (err) {
+          console.error('Failed to save annotations to cloud:', err);
+        } finally {
+          setIsSaving(false);
+        }
+      }, 1000);
     },
-    [storageKey]
+    [drawingRecordId, noteId, readOnly, storageKey]
   );
 
   // Resize canvas to match target container bounds (only the note taking area)
@@ -390,6 +488,20 @@ export function NoteAnnotationLayer({
         </div>
 
         <div className="w-px h-4 bg-slate-200 dark:border-slate-800 mx-0.5" />
+
+        {/* Realtime Cloud Save Status */}
+        {isSaving && (
+          <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 rounded-full border border-indigo-200 dark:border-indigo-800">
+            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+            <span>Saving…</span>
+          </span>
+        )}
+        {!isSaving && showSavedFeedback && (
+          <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 rounded-full border border-emerald-200 dark:border-emerald-800">
+            <Check className="w-2.5 h-2.5" />
+            <span>Saved</span>
+          </span>
+        )}
 
         {/* Undo / Redo / Visibility */}
         <button
