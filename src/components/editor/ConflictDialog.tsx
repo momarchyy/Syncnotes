@@ -43,7 +43,7 @@ export function ConflictDialog({
               This note was updated in another tab or device.
             </p>
             <p className="mt-0.5 text-amber-700 dark:text-amber-300">
-              Database error <code>40001 (VERSION_CONFLICT)</code> prevented your changes from silently overwriting the other version. Please choose how to resolve:
+              A <code>VERSION_CONFLICT</code> was detected to prevent your changes from silently overwriting the other version. Please choose how to resolve:
             </p>
           </div>
         </div>

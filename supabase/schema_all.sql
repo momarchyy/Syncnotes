@@ -387,9 +387,9 @@ create trigger attachments_after_insert after insert on attachments
   for each row execute function attachments_after_insert();
 
 -- RPC: save with optimistic concurrency control.
--- Succeeds only if the caller's expected version matches the DB. Otherwise raises SQLSTATE 40001.
+-- Succeeds only if the caller's expected version matches the DB. Otherwise raises VERSION_CONFLICT.
 -- SECURITY INVOKER, so RLS still decides whether the caller may edit.
-create function save_note(p_note_id uuid, p_expected_version int, p_title text, p_content jsonb, p_content_text text)
+create or replace function save_note(p_note_id uuid, p_expected_version int, p_title text, p_content jsonb, p_content_text text)
 returns notes language plpgsql as $$
 declare v_note notes;
 begin
@@ -399,7 +399,7 @@ begin
   returning * into v_note;
 
   if not found then
-    raise exception 'VERSION_CONFLICT' using errcode = '40001';
+    raise exception 'VERSION_CONFLICT';
   end if;
   return v_note;
 end $$;
@@ -536,3 +536,29 @@ drop policy if exists notes_update on notes;
 create policy notes_update on notes for update to authenticated
   using (owner_id = auth.uid() or has_note_access(id, 'editor'))
   with check (owner_id = auth.uid() or has_note_access(id, 'editor'));
+
+
+-- ============================================================================
+-- 007_fix_save_note.sql : Fix save_note exception to prevent PostgREST retry loop
+-- ============================================================================
+
+create or replace function save_note(
+  p_note_id uuid,
+  p_expected_version int,
+  p_title text,
+  p_content jsonb,
+  p_content_text text
+)
+returns notes language plpgsql as $$
+declare v_note notes;
+begin
+  update notes
+     set title = p_title, content = p_content, content_text = p_content_text
+   where id = p_note_id and version = p_expected_version and deleted_at is null
+  returning * into v_note;
+
+  if not found then
+    raise exception 'VERSION_CONFLICT';
+  end if;
+  return v_note;
+end $$;

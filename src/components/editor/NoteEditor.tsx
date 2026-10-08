@@ -88,12 +88,30 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
       if (latest) {
         setRemoteNote(latest);
-        setConflictOpen(true);
+      } else {
+        setRemoteNote({
+          id: noteId,
+          owner_id: '',
+          title: 'Remote Note',
+          content: {},
+          content_text: '',
+          version: (note?.version ?? versionRef.current) + 1,
+          is_pinned: false,
+          is_favorite: false,
+          is_archived: false,
+          folder_id: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          deleted_at: null,
+          search_vector: null,
+        });
       }
+      setConflictOpen(true);
     } catch (err) {
       console.error('Error fetching latest note for conflict resolution:', err);
+      setConflictOpen(true);
     }
-  }, [noteId]);
+  }, [noteId, note]);
 
   const editorRef = useRef<any>(null);
 
@@ -123,9 +141,10 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           });
 
           if (rpcError) {
-            // Check for Postgres SQLSTATE 40001 (VERSION_CONFLICT)
+            // Check for Postgres SQLSTATE 40001 / P0001 / VERSION_CONFLICT
             if (
               rpcError.code === '40001' || 
+              rpcError.code === 'P0001' ||
               rpcError.message?.includes('VERSION_CONFLICT') ||
               rpcError.details?.includes('VERSION_CONFLICT')
             ) {
@@ -280,9 +299,9 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
     if (editor) {
       if (remoteNote.content && typeof remoteNote.content === 'object' && Object.keys(remoteNote.content).length > 0) {
-        editor.commands.setContent(remoteNote.content as JSONContent);
+        editor.commands.setContent(remoteNote.content as JSONContent, false);
       } else {
-        editor.commands.setContent('');
+        editor.commands.setContent('', false);
       }
     }
 
