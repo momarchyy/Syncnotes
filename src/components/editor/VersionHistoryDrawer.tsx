@@ -65,7 +65,7 @@ export function VersionHistoryDrawer({
                 Version History
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Snapshots captured every 2 minutes of active editing
+                Snapshots captured every 1 minute of active editing
               </p>
             </div>
           </div>

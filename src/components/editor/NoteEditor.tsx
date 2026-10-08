@@ -25,9 +25,16 @@ import {
   BookOpen,
   Highlighter,
   History,
+  Share2,
+  MessageSquare,
+  Shield,
 } from 'lucide-react';
 import { NoteAnnotationLayer } from './NoteAnnotationLayer';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
+import { ShareModal } from './ShareModal';
+import { CommentsDrawer } from './CommentsDrawer';
+import { useNoteRole } from '../../hooks/useCollaborators';
+import { useNoteComments } from '../../hooks/useComments';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Toolbar } from './Toolbar';
@@ -93,6 +100,12 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isAddingDrawing, setIsAddingDrawing] = useState(false);
   const [pendingCropFile, setPendingCropFile] = useState<File | null>(null);
+
+  // Collaboration & Permissions (Phase 9)
+  const { role, isOwner, canEdit, canComment } = useNoteRole(noteId, note?.owner_id);
+  const { data: noteComments = [] } = useNoteComments(noteId);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [commentsDrawerOpen, setCommentsDrawerOpen] = useState(false);
 
   // Folder & Tag dropdown open states
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
@@ -422,12 +435,12 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   }, [note, editor]);
 
-  // Synchronize Tiptap editable state with isEditing toggle
+  // Synchronize Tiptap editable state with isEditing toggle and permissions
   useEffect(() => {
     if (editor) {
-      editor.setEditable(isEditing);
+      editor.setEditable(isEditing && canEdit);
     }
-  }, [editor, isEditing]);
+  }, [editor, isEditing, canEdit]);
 
   // Reset content ref when switching notes
   useEffect(() => {
@@ -821,38 +834,47 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           {/* Read / Edit Mode Toggle & Annotate Button */}
           {!isDeleted && (
             <>
-              <button
-                type="button"
-                onClick={() => setIsEditing((v) => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                  isEditing
-                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
-                }`}
-                title={isEditing ? 'Finish editing (Switch to Read Mode)' : 'Edit note'}
-              >
-                {isEditing ? (
-                  <>
-                    <BookOpen className="w-3.5 h-3.5" />
-                    <span>Done</span>
-                  </>
-                ) : (
-                  <>
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Edit</span>
-                  </>
-                )}
-              </button>
+              {canEdit ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing((v) => !v)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                      isEditing
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
+                    }`}
+                    title={isEditing ? 'Finish editing (Switch to Read Mode)' : 'Edit note'}
+                  >
+                    {isEditing ? (
+                      <>
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Done</span>
+                      </>
+                    ) : (
+                      <>
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </>
+                    )}
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => setIsAnnotating(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 transition cursor-pointer"
-                title="Freehand Annotate & Markup note (Approach C)"
-              >
-                <Highlighter className="w-3.5 h-3.5 text-amber-600" />
-                <span className="hidden sm:inline">Annotate</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAnnotating(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 transition cursor-pointer"
+                    title="Freehand Annotate & Markup note (Approach C)"
+                  >
+                    <Highlighter className="w-3.5 h-3.5 text-amber-600" />
+                    <span className="hidden sm:inline">Annotate</span>
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-500 capitalize">
+                  <Shield className="w-3 h-3 text-slate-400" />
+                  <span>{role}</span>
+                </div>
+              )}
 
               <div className="w-px h-4 bg-slate-200 dark:border-slate-800 mx-1" />
             </>
@@ -881,6 +903,31 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             </>
           ) : (
             <>
+              {/* Comments Drawer Button with Live Counter */}
+              <button
+                type="button"
+                onClick={() => setCommentsDrawerOpen(true)}
+                title="Comments"
+                className="relative p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <MessageSquare className="w-4 h-4" />
+                {noteComments.length > 0 && (
+                  <span className="absolute -top-1 -right-1 px-1 min-w-[15px] h-[15px] rounded-full bg-indigo-600 text-white text-[9px] font-bold flex items-center justify-center">
+                    {noteComments.length}
+                  </span>
+                )}
+              </button>
+
+              {/* Share Note Button (Phase 9) */}
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(true)}
+                title={isOwner ? 'Share note with collaborators' : 'View collaborators'}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
+
               <button
                 type="button"
                 onClick={handleTogglePin}
@@ -929,14 +976,16 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
                 <Archive className="w-4 h-4" />
               </button>
 
-              <button
-                type="button"
-                onClick={handleTrash}
-                title="Move to trash"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={handleTrash}
+                  title="Move to trash"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </>
           )}
         </div>
@@ -1205,6 +1254,24 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           isDirtyRef.current = false;
           initialContentSetRef.current = false; // re-sync editor content from restored note
         }}
+      />
+
+      {/* Share & Collaborators Modal (Phase 9) */}
+      <ShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        noteId={noteId}
+        noteTitle={title}
+        isOwner={isOwner}
+      />
+
+      {/* Realtime Comments Drawer (Phase 9) */}
+      <CommentsDrawer
+        isOpen={commentsDrawerOpen}
+        onClose={() => setCommentsDrawerOpen(false)}
+        noteId={noteId}
+        canComment={canComment}
+        isOwner={isOwner}
       />
     </div>
   );

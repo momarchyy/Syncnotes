@@ -11,7 +11,8 @@ import {
   Sparkles, 
   Inbox,
   Folder as FolderIcon,
-  Tag as TagIcon
+  Tag as TagIcon,
+  Users
 } from 'lucide-react';
 import { useNotes, useCreateNote, useUpdateNote, useTrashNote, useRestoreNote, useDeleteNotePermanently, NoteFilter } from '../hooks/useNotes';
 import { useFolder, useFolderPath } from '../hooks/useFolders';
@@ -39,6 +40,7 @@ export function Notes() {
   // Determine current filter from route path
   const filter: NoteFilter = useMemo(() => {
     if (location.pathname.startsWith('/favorites')) return { type: 'favorites' };
+    if (location.pathname.startsWith('/shared')) return { type: 'shared' };
     if (location.pathname.startsWith('/archive')) return { type: 'archive' };
     if (location.pathname.startsWith('/trash')) return { type: 'trash' };
     if (location.pathname.startsWith('/folder/')) {
@@ -79,6 +81,7 @@ export function Notes() {
       return `/tag/${filter.tagId}/note/${noteId}`;
     }
     if (filter.type === 'favorites') return `/favorites/note/${noteId}`;
+    if (filter.type === 'shared') return `/shared/note/${noteId}`;
     if (filter.type === 'archive') return `/archive/note/${noteId}`;
     if (filter.type === 'trash') return `/trash/note/${noteId}`;
     return `/note/${noteId}`;
@@ -89,6 +92,7 @@ export function Notes() {
     if (filter.type === 'folder' && filter.folderId) return `/folder/${filter.folderId}`;
     if (filter.type === 'tag' && filter.tagId) return `/tag/${filter.tagId}`;
     if (filter.type === 'favorites') return '/favorites';
+    if (filter.type === 'shared') return '/shared';
     if (filter.type === 'archive') return '/archive';
     if (filter.type === 'trash') return '/trash';
     return '/';
@@ -113,6 +117,8 @@ export function Notes() {
     switch (filter.type) {
       case 'favorites':
         return { title: 'Favorites', icon: Star, color: 'text-rose-500' };
+      case 'shared':
+        return { title: 'Shared with me', icon: Users, color: 'text-indigo-600' };
       case 'archive':
         return { title: 'Archive', icon: Archive, color: 'text-indigo-500' };
       case 'trash':

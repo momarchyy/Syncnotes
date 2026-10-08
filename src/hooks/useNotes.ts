@@ -12,7 +12,7 @@ export type Note = Database['public']['Tables']['notes']['Row'] & {
 export type NoteUpdate = Database['public']['Tables']['notes']['Update'];
 
 export interface NoteFilter {
-  type?: 'all' | 'favorites' | 'archive' | 'trash' | 'folder' | 'tag';
+  type?: 'all' | 'favorites' | 'shared' | 'archive' | 'trash' | 'folder' | 'tag';
   folderId?: string | null;
   tagId?: string;
 }
@@ -37,6 +37,15 @@ export function useNotes(filter: NoteFilter = { type: 'all' }) {
         if (filter.type === 'favorites') {
           // Show all favorites regardless of archive status
           query = query.eq('is_favorite', true);
+        } else if (filter.type === 'shared') {
+          // Query notes where the user is a collaborator (not the owner)
+          const { data: collabNotes } = await supabase
+            .from('note_collaborators')
+            .select('note_id')
+            .eq('user_id', user.id);
+          const sharedIds = collabNotes?.map((c) => c.note_id) || [];
+          if (sharedIds.length === 0) return [];
+          query = query.in('id', sharedIds);
         } else if (filter.type === 'archive') {
           query = query.eq('is_archived', true);
         } else if (filter.type === 'folder' && filter.folderId) {
