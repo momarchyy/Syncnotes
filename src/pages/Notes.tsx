@@ -23,7 +23,8 @@ import { useToast } from '../components/ui/Toast';
 export function Notes() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { id: selectedNoteId } = useParams();
+  const { id: routeNoteId, folderId: routeFolderId, tagId: routeTagId } = useParams();
+  const selectedNoteId = routeNoteId;
 
   const createNote = useCreateNote();
   const updateNote = useUpdateNote();
@@ -41,15 +42,15 @@ export function Notes() {
     if (location.pathname.startsWith('/archive')) return { type: 'archive' };
     if (location.pathname.startsWith('/trash')) return { type: 'trash' };
     if (location.pathname.startsWith('/folder/')) {
-      const parts = location.pathname.split('/folder/')[1]?.split('/');
-      return { type: 'folder', folderId: parts?.[0] };
+      const folderId = routeFolderId || location.pathname.split('/folder/')[1]?.split('/')[0];
+      return { type: 'folder', folderId };
     }
     if (location.pathname.startsWith('/tag/')) {
-      const parts = location.pathname.split('/tag/')[1]?.split('/');
-      return { type: 'tag', tagId: parts?.[0] };
+      const tagId = routeTagId || location.pathname.split('/tag/')[1]?.split('/')[0];
+      return { type: 'tag', tagId };
     }
     return { type: 'all' };
-  }, [location.pathname]);
+  }, [location.pathname, routeFolderId, routeTagId]);
 
   const { data: currentFolder } = useFolder(filter.type === 'folder' ? filter.folderId ?? undefined : undefined);
   const { data: folderPath = [] } = useFolderPath(filter.type === 'folder' ? filter.folderId ?? undefined : undefined);
@@ -69,6 +70,30 @@ export function Notes() {
   const pinnedNotes = useMemo(() => filteredNotes.filter((n) => n.is_pinned), [filteredNotes]);
   const regularNotes = useMemo(() => filteredNotes.filter((n) => !n.is_pinned), [filteredNotes]);
 
+  // Compute the URL to open a note while maintaining current view context
+  const getNoteOpenUrl = (noteId: string) => {
+    if (filter.type === 'folder' && filter.folderId) {
+      return `/folder/${filter.folderId}/note/${noteId}`;
+    }
+    if (filter.type === 'tag' && filter.tagId) {
+      return `/tag/${filter.tagId}/note/${noteId}`;
+    }
+    if (filter.type === 'favorites') return `/favorites/note/${noteId}`;
+    if (filter.type === 'archive') return `/archive/note/${noteId}`;
+    if (filter.type === 'trash') return `/trash/note/${noteId}`;
+    return `/note/${noteId}`;
+  };
+
+  // Compute the back/close URL to return to the active list view
+  const getBackUrl = () => {
+    if (filter.type === 'folder' && filter.folderId) return `/folder/${filter.folderId}`;
+    if (filter.type === 'tag' && filter.tagId) return `/tag/${filter.tagId}`;
+    if (filter.type === 'favorites') return '/favorites';
+    if (filter.type === 'archive') return '/archive';
+    if (filter.type === 'trash') return '/trash';
+    return '/';
+  };
+
   const handleCreateNote = async () => {
     try {
       const newNote = await createNote.mutateAsync({ 
@@ -78,7 +103,7 @@ export function Notes() {
       if (filter.type === 'tag' && filter.tagId) {
         await addTagToNote.mutateAsync({ noteId: newNote.id, tagId: filter.tagId });
       }
-      navigate(`/note/${newNote.id}`);
+      navigate(getNoteOpenUrl(newNote.id));
     } catch (err) {
       error((err as Error).message || 'Failed to create note');
     }
@@ -137,7 +162,7 @@ export function Notes() {
                 key={note.id}
                 note={note}
                 isSelected={note.id === selectedNoteId}
-                onClick={() => navigate(`/note/${note.id}`)}
+                onClick={() => navigate(getNoteOpenUrl(note.id))}
               />
             ))}
           </div>
@@ -147,7 +172,7 @@ export function Notes() {
         <div className="flex-1 h-full min-w-0">
           <NoteEditor
             noteId={selectedNoteId}
-            onClose={() => navigate(location.pathname.startsWith('/note') ? '/' : location.pathname)}
+            onClose={() => navigate(getBackUrl())}
           />
         </div>
       </div>
@@ -294,7 +319,7 @@ export function Notes() {
                   <NoteCard
                     key={note.id}
                     note={note}
-                    onClick={() => navigate(`/note/${note.id}`)}
+                    onClick={() => navigate(getNoteOpenUrl(note.id))}
                     onTogglePin={(e) => {
                       e.stopPropagation();
                       updateNote.mutate({ id: note.id, is_pinned: !note.is_pinned });
@@ -340,7 +365,7 @@ export function Notes() {
                 <NoteCard
                   key={note.id}
                   note={note}
-                  onClick={() => navigate(`/note/${note.id}`)}
+                  onClick={() => navigate(getNoteOpenUrl(note.id))}
                   onTogglePin={(e) => {
                     e.stopPropagation();
                     updateNote.mutate({ id: note.id, is_pinned: !note.is_pinned });

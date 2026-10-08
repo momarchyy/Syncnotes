@@ -32,11 +32,17 @@ export function App() {
                   <Route path="/" element={<Notes />} />
                   <Route path="/note/:id" element={<Notes />} />
                   <Route path="/shared" element={<Notes />} />
+                  <Route path="/shared/note/:id" element={<Notes />} />
                   <Route path="/favorites" element={<Notes />} />
+                  <Route path="/favorites/note/:id" element={<Notes />} />
                   <Route path="/archive" element={<Notes />} />
+                  <Route path="/archive/note/:id" element={<Notes />} />
                   <Route path="/trash" element={<Notes />} />
-                  <Route path="/folder/:id" element={<Notes />} />
-                  <Route path="/tag/:id" element={<Notes />} />
+                  <Route path="/trash/note/:id" element={<Notes />} />
+                  <Route path="/folder/:folderId" element={<Notes />} />
+                  <Route path="/folder/:folderId/note/:id" element={<Notes />} />
+                  <Route path="/tag/:tagId" element={<Notes />} />
+                  <Route path="/tag/:tagId/note/:id" element={<Notes />} />
                   <Route path="/search" element={<Notes />} />
                   <Route path="/analytics" element={<Notes />} />
                   <Route path="/activity" element={<Notes />} />

@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { 
   FileText, 
   Star, 
@@ -42,6 +42,7 @@ interface SidebarProps {
 
 export function Sidebar({ onCloseMobile }: SidebarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const createNote = useCreateNote();
   const { success, error } = useToast();
 
@@ -56,6 +57,23 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
+
+  // Auto-expand folder and its ancestors when navigating into a folder
+  useEffect(() => {
+    if (location.pathname.startsWith('/folder/')) {
+      const folderId = location.pathname.split('/folder/')[1]?.split('/')[0];
+      if (folderId && rawFolders.length > 0) {
+        const toExpand = new Set<string>();
+        let curr: string | null | undefined = folderId;
+        while (curr) {
+          toExpand.add(curr);
+          const f = rawFolders.find((item) => item.id === curr);
+          curr = f?.parent_id;
+        }
+        setExpandedFolderIds((prev) => new Set([...prev, ...toExpand]));
+      }
+    }
+  }, [location.pathname, rawFolders]);
 
   // Tags state & hooks
   const { data: tags = [] } = useTags();
@@ -211,7 +229,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
   const renderFolderNode = (node: FolderTreeNode, depth = 0) => {
     const isExpanded = expandedFolderIds.has(node.id);
     const hasChildren = node.children.length > 0;
-    const isCurrentActive = location.pathname === `/folder/${node.id}`;
+    const isCurrentActive = location.pathname.startsWith(`/folder/${node.id}`);
 
     return (
       <div key={node.id} className="select-none">
@@ -319,15 +337,19 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
           <nav className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isItemActive = item.to === '/'
+                ? location.pathname === '/' || location.pathname.startsWith('/note/')
+                : location.pathname.startsWith(item.to);
+
               return (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end={item.to === '/'}
                   onClick={onCloseMobile}
-                  className={({ isActive }) =>
+                  className={() =>
                     `flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                      isActive
+                      isItemActive
                         ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
                     }`
@@ -390,7 +412,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
               </p>
             ) : (
               tags.map((tag) => {
-                const isCurrentActive = location.pathname === `/tag/${tag.id}`;
+                const isCurrentActive = location.pathname.startsWith(`/tag/${tag.id}`);
                 return (
                   <div
                     key={tag.id}
