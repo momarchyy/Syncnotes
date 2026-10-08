@@ -43,6 +43,10 @@ import {
   useAddTagToNote, 
   useRemoveTagFromNote 
 } from '../../hooks/useTags';
+import { useAuth } from '../../contexts/AuthContext';
+import { StorageImageNode } from './StorageImageNode';
+import { uploadNoteImage } from '../../lib/imageUpload';
+import { ImageCropModal } from './ImageCropModal';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
@@ -58,6 +62,7 @@ interface NoteEditorProps {
 export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { data: note, isLoading } = useNote(noteId);
   const updateNote = useUpdateNote();
   const trashNote = useTrashNote();
@@ -75,6 +80,8 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [title, setTitle] = useState('');
   const [currentVersion, setCurrentVersion] = useState<number>(1);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [pendingCropFile, setPendingCropFile] = useState<File | null>(null);
 
   // Folder & Tag dropdown open states
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
@@ -226,6 +233,51 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     triggerSaveRef.current = triggerSave;
   }, [triggerSave]);
 
+  // Perform actual upload after optional cropping/editing
+  const performImageUpload = useCallback(
+    async (file: File) => {
+      const ownerId = note?.owner_id || user?.id;
+      if (!ownerId) {
+        error('Cannot upload image: missing user or note owner');
+        return;
+      }
+
+      setIsUploadingImage(true);
+      try {
+        const uploadResult = await uploadNoteImage({
+          file,
+          noteId,
+          ownerId,
+        });
+
+        if (editorRef.current) {
+          editorRef.current
+            .chain()
+            .focus()
+            .setStorageImage({ path: uploadResult.path, alt: file.name })
+            .run();
+        }
+        success('Image uploaded');
+      } catch (err) {
+        console.error('Image upload failed:', err);
+        error((err as Error).message || 'Failed to upload image');
+      } finally {
+        setIsUploadingImage(false);
+      }
+    },
+    [note?.owner_id, user?.id, noteId, error, success]
+  );
+
+  // Triggered on paste, drop, or toolbar upload: prompt crop modal
+  const handleInitiateImageUpload = useCallback((file: File) => {
+    setPendingCropFile(file);
+  }, []);
+
+  const handleInitiateImageUploadRef = useRef(handleInitiateImageUpload);
+  useEffect(() => {
+    handleInitiateImageUploadRef.current = handleInitiateImageUpload;
+  }, [handleInitiateImageUpload]);
+
   // Initialize Tiptap
   const editor = useEditor({
     extensions: [
@@ -239,11 +291,43 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       TaskItem.configure({
         nested: true,
       }),
+      StorageImageNode,
     ],
     content: '',
     editorProps: {
       attributes: {
         class: 'prose dark:prose-invert max-w-none focus:outline-none min-h-[350px] p-4 text-slate-800 dark:text-slate-200 text-sm leading-relaxed',
+      },
+      handlePaste: (_view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+              event.preventDefault();
+              handleInitiateImageUploadRef.current(file);
+              return true;
+            }
+          }
+        }
+        return false;
+      },
+      handleDrop: (_view, event) => {
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0) return false;
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          if (file.type.startsWith('image/')) {
+            event.preventDefault();
+            handleInitiateImageUploadRef.current(file);
+            return true;
+          }
+        }
+        return false;
       },
     },
     onUpdate: ({ editor }) => {
@@ -927,7 +1011,13 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       )}
 
       {/* Tiptap Toolbar */}
-      {!isDeleted && <Toolbar editor={editor} />}
+      {!isDeleted && (
+        <Toolbar
+          editor={editor}
+          onUploadImage={handleInitiateImageUpload}
+          isUploadingImage={isUploadingImage}
+        />
+      )}
 
       {/* Tiptap Document Body */}
       <div className="flex-1 overflow-y-auto px-2">
@@ -973,6 +1063,17 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           </button>
         </div>
       </Modal>
+
+      {/* Image Crop & Transformation Modal */}
+      <ImageCropModal
+        isOpen={Boolean(pendingCropFile)}
+        file={pendingCropFile}
+        onClose={() => setPendingCropFile(null)}
+        onConfirm={(processedFile) => {
+          setPendingCropFile(null);
+          performImageUpload(processedFile);
+        }}
+      />
     </div>
   );
 }

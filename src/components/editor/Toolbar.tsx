@@ -11,13 +11,19 @@ import {
   Code,
   Quote,
   Minus,
+  ImageIcon,
+  Loader2,
 } from 'lucide-react';
+import { useRef } from 'react';
 
 interface ToolbarProps {
   editor: Editor | null;
+  onUploadImage?: (file: File) => void;
+  isUploadingImage?: boolean;
 }
 
-export function Toolbar({ editor }: ToolbarProps) {
+export function Toolbar({ editor, onUploadImage, isUploadingImage }: ToolbarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   if (!editor) return null;
 
   return (
@@ -168,6 +174,44 @@ export function Toolbar({ editor }: ToolbarProps) {
       >
         <Minus className="w-4 h-4" />
       </button>
+
+      <div className="w-px h-4 bg-slate-200 dark:border-slate-800 mx-1" />
+
+      {onUploadImage && (
+        <>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                onUploadImage(file);
+                e.target.value = '';
+              }
+            }}
+            accept="image/*"
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploadingImage}
+            className={`p-1.5 rounded-lg text-xs transition flex items-center gap-1.5 ${
+              isUploadingImage
+                ? 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-800'
+                : 'hover:bg-slate-200/60 dark:hover:bg-slate-800'
+            }`}
+            title="Add image"
+          >
+            {isUploadingImage ? (
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+            ) : (
+              <ImageIcon className="w-4 h-4" />
+            )}
+            <span className="hidden sm:inline text-xs font-medium">Image</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }
