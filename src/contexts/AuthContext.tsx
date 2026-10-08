@@ -31,16 +31,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfileAndSettings = async (userId: string) => {
     try {
       const [profileRes, settingsRes] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', userId).single(),
-        supabase.from('user_settings').select('*').eq('user_id', userId).single(),
+        supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+        supabase.from('user_settings').select('*').eq('user_id', userId).maybeSingle(),
       ]);
 
       if (profileRes.data) {
         setProfile(profileRes.data);
+      } else {
+        // Fallback profile creation if trigger did not run
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        const fallbackName = currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || 'User';
+        const { data: createdProfile } = await supabase
+          .from('profiles')
+          .upsert({ id: userId, display_name: fallbackName })
+          .select()
+          .single();
+        if (createdProfile) setProfile(createdProfile);
       }
+
       if (settingsRes.data) {
         setSettings(settingsRes.data);
         applyTheme(settingsRes.data.theme);
+      } else {
+        // Fallback user_settings creation
+        const { data: createdSettings } = await supabase
+          .from('user_settings')
+          .upsert({ user_id: userId })
+          .select()
+          .single();
+        if (createdSettings) {
+          setSettings(createdSettings);
+          applyTheme(createdSettings.theme);
+        }
       }
     } catch (err) {
       console.error('Error fetching user profile or settings:', err);
@@ -70,18 +92,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // 1. Initial session check
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      if (initialSession?.user) {
-        fetchProfileAndSettings(initialSession.user.id).finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
+    const isOAuthCallback =
+      window.location.search.includes('code=') ||
+      window.location.hash.includes('access_token=');
 
-    // 2. Listen for auth state changes
+    // 1. Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
@@ -96,8 +111,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
+    // 2. Initial session check
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (initialSession) {
+        setSession(initialSession);
+        setUser(initialSession.user);
+        fetchProfileAndSettings(initialSession.user.id).finally(() => setLoading(false));
+      } else if (!isOAuthCallback) {
+        // If an OAuth code exchange is in progress, let onAuthStateChange finish it!
+        setLoading(false);
+      }
+    });
+
+    // Safety timeout in case an OAuth callback failed or was abandoned
+    let safetyTimer: NodeJS.Timeout | null = null;
+    if (isOAuthCallback) {
+      safetyTimer = setTimeout(() => {
+        setLoading(false);
+      }, 5000);
+    }
+
     return () => {
       subscription.unsubscribe();
+      if (safetyTimer) clearTimeout(safetyTimer);
     };
   }, []);
 

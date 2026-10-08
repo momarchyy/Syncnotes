@@ -24,6 +24,20 @@ export function Auth() {
     }
   }, [user, navigate, destination]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const oauthError =
+      params.get('error_description') ||
+      params.get('error') ||
+      hashParams.get('error_description') ||
+      hashParams.get('error');
+
+    if (oauthError) {
+      setErrorMsg(decodeURIComponent(oauthError.replace(/\+/g, ' ')));
+    }
+  }, []);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
