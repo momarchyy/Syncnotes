@@ -20,6 +20,7 @@ interface NoteAnnotationLayerProps {
   isOpen: boolean;
   onClose: () => void;
   readOnly?: boolean;
+  targetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 const COLOR_PRESETS = [
@@ -50,6 +51,7 @@ export function NoteAnnotationLayer({
   isOpen,
   onClose,
   readOnly = false,
+  targetRef,
 }: NoteAnnotationLayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [strokes, setStrokes] = useState<StrokeData[]>([]);
@@ -59,6 +61,12 @@ export function NoteAnnotationLayer({
   const [color, setColor] = useState<string>('#ef4444');
   const [size, setSize] = useState<number>(4);
   const [isVisible, setIsVisible] = useState<boolean>(true);
+  const [bounds, setBounds] = useState<{ top: number; left: number; width: number; height: number }>({
+    top: 0,
+    left: 0,
+    width: 0,
+    height: 0,
+  });
 
   const isDrawingRef = useRef<boolean>(false);
   const currentStrokeRef = useRef<StrokeData | null>(null);
@@ -97,22 +105,42 @@ export function NoteAnnotationLayer({
     [storageKey]
   );
 
-  // Resize canvas to match window
+  // Resize canvas to match target container bounds (only the note taking area)
   useEffect(() => {
     if (!isOpen) return;
 
-    const handleResize = () => {
+    const updateBounds = () => {
+      const target = targetRef?.current;
       const canvas = canvasRef.current;
       if (!canvas) return;
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        setBounds({
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        });
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+      } else {
+        setBounds({
+          top: 0,
+          left: 0,
+          width: window.innerWidth,
+          height: window.innerHeight,
+        });
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
       renderCanvas();
     };
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [isOpen]);
+    updateBounds();
+    window.addEventListener('resize', updateBounds);
+    return () => window.removeEventListener('resize', updateBounds);
+  }, [isOpen, targetRef]);
 
   // Render strokes
   const renderCanvas = useCallback(() => {
@@ -163,14 +191,22 @@ export function NoteAnnotationLayer({
     renderCanvas();
   }, [renderCanvas]);
 
+  const getCanvasPoint = (e: React.PointerEvent<HTMLCanvasElement>): [number, number, number] => {
+    const canvas = canvasRef.current;
+    if (!canvas) return [e.clientX, e.clientY, 0.5];
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const p = e.pressure || 0.5;
+    return [x, y, p];
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (readOnly || !isVisible) return;
     isDrawingRef.current = true;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
-    const x = e.clientX;
-    const y = e.clientY;
-    const p = e.pressure || 0.5;
+    const [x, y, p] = getCanvasPoint(e);
 
     if (currentTool === 'eraser') {
       const filtered = strokes.filter((s) => {
@@ -192,9 +228,7 @@ export function NoteAnnotationLayer({
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawingRef.current || readOnly || !isVisible) return;
-    const x = e.clientX;
-    const y = e.clientY;
-    const p = e.pressure || 0.5;
+    const [x, y, p] = getCanvasPoint(e);
 
     if (currentTool === 'eraser') {
       const filtered = strokes.filter((s) => {
@@ -268,9 +302,17 @@ export function NoteAnnotationLayer({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] pointer-events-none select-none">
-      {/* Floating Markup Controls Bar */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-2 pointer-events-auto text-xs animate-in fade-in slide-in-from-top-2">
+    <div
+      className="fixed z-[9999] pointer-events-none select-none overflow-hidden"
+      style={{
+        top: bounds.top,
+        left: bounds.left,
+        width: bounds.width,
+        height: bounds.height,
+      }}
+    >
+      {/* Floating Markup Controls Bar positioned inside note area */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 flex items-center gap-2 pointer-events-auto text-xs animate-in fade-in slide-in-from-top-2 z-10">
         {/* Tool Selector */}
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl">
           <button
@@ -406,7 +448,7 @@ export function NoteAnnotationLayer({
         </button>
       </div>
 
-      {/* Transparent Annotation Canvas Overlay over entire page */}
+      {/* Transparent Annotation Canvas Overlay over note area only */}
       <canvas
         ref={canvasRef}
         onPointerDown={handlePointerDown}

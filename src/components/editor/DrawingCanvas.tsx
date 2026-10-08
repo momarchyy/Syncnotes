@@ -373,7 +373,7 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
       ref={containerRef}
       className={`relative rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden select-none transition-all flex flex-col ${
         isFullscreen
-          ? 'fixed inset-0 z-[9999] w-screen h-screen rounded-none border-0'
+          ? '!fixed !inset-0 !z-[99999] !w-screen !h-screen !max-w-none !max-h-none !m-0 !rounded-none !border-0 overflow-hidden'
           : `w-full my-4 ${heightClasses[canvasHeight]}`
       }`}
     >

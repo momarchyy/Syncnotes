@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
@@ -13,14 +14,25 @@ declare module '@tiptap/core' {
 
 function DrawingComponent({ node, deleteNode, editor }: NodeViewProps) {
   const { drawingId } = node.attrs;
-  const isEditable = editor.isEditable;
+  const [editable, setEditable] = useState(editor.isEditable);
+
+  useEffect(() => {
+    const updateEditable = () => {
+      setEditable(editor.isEditable);
+    };
+
+    editor.on('transaction', updateEditable);
+    return () => {
+      editor.off('transaction', updateEditable);
+    };
+  }, [editor]);
 
   return (
     <NodeViewWrapper className="my-6 relative block select-none">
       <DrawingCanvas
         drawingId={drawingId}
-        readOnly={!isEditable}
-        onDelete={isEditable ? deleteNode : undefined}
+        readOnly={!editable}
+        onDelete={editable ? deleteNode : undefined}
       />
     </NodeViewWrapper>
   );
