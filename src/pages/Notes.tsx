@@ -1,99 +1,325 @@
-import { useAuth } from '../hooks/useAuth';
-import { User, ShieldCheck, Sliders, CheckCircle } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { 
+  FileText, 
+  Plus, 
+  Star, 
+  Archive, 
+  Trash2, 
+  Search, 
+  Pin,
+  Sparkles,
+  Inbox
+} from 'lucide-react';
+import { useNotes, useCreateNote, useUpdateNote, useTrashNote, useRestoreNote, useDeleteNotePermanently, NoteFilter } from '../hooks/useNotes';
+import { NoteCard } from '../components/notes/NoteCard';
+import { NoteEditor } from '../components/editor/NoteEditor';
+import { useToast } from '../components/ui/Toast';
 
 export function Notes() {
-  const { user, profile, settings } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { id: selectedNoteId } = useParams();
 
-  return (
-    <div className="max-w-4xl mx-auto px-4 py-8 w-full">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-            <CheckCircle className="w-5 h-5" />
+  const createNote = useCreateNote();
+  const updateNote = useUpdateNote();
+  const trashNote = useTrashNote();
+  const restoreNote = useRestoreNote();
+  const deletePermanently = useDeleteNotePermanently();
+  const { success, error } = useToast();
+
+  const [searchQuery, setSearchQuery] = React.useState('');
+
+  // Determine current filter from route path
+  const filter: NoteFilter = useMemo(() => {
+    if (location.pathname.startsWith('/favorites')) return { type: 'favorites' };
+    if (location.pathname.startsWith('/archive')) return { type: 'archive' };
+    if (location.pathname.startsWith('/trash')) return { type: 'trash' };
+    return { type: 'all' };
+  }, [location.pathname]);
+
+  const { data: notes = [], isLoading } = useNotes(filter);
+
+  // Client-side quick filter by title or text
+  const filteredNotes = useMemo(() => {
+    if (!searchQuery.trim()) return notes;
+    const q = searchQuery.toLowerCase();
+    return notes.filter(
+      (n) => n.title.toLowerCase().includes(q) || n.content_text.toLowerCase().includes(q)
+    );
+  }, [notes, searchQuery]);
+
+  const pinnedNotes = useMemo(() => filteredNotes.filter((n) => n.is_pinned), [filteredNotes]);
+  const regularNotes = useMemo(() => filteredNotes.filter((n) => !n.is_pinned), [filteredNotes]);
+
+  const handleCreateNote = async () => {
+    try {
+      const newNote = await createNote.mutateAsync({ title: 'Untitled' });
+      navigate(`/note/${newNote.id}`);
+    } catch (err) {
+      error((err as Error).message || 'Failed to create note');
+    }
+  };
+
+  const getPageTitle = () => {
+    switch (filter.type) {
+      case 'favorites':
+        return { title: 'Favorites', icon: Star, color: 'text-rose-500' };
+      case 'archive':
+        return { title: 'Archive', icon: Archive, color: 'text-indigo-500' };
+      case 'trash':
+        return { title: 'Trash', icon: Trash2, color: 'text-amber-500' };
+      default:
+        return { title: 'All Notes', icon: FileText, color: 'text-indigo-600' };
+    }
+  };
+
+  const pageInfo = getPageTitle();
+  const PageIcon = pageInfo.icon;
+
+  // Master-Detail layout when note is selected
+  if (selectedNoteId) {
+    return (
+      <div className="h-full flex overflow-hidden">
+        {/* Left List Pane (Visible on lg+ screens) */}
+        <div className="hidden lg:flex w-80 xl:w-96 border-r border-slate-200 dark:border-slate-800 flex-col bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+          <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <h2 className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <PageIcon className={`w-4 h-4 ${pageInfo.color}`} />
+              <span>{pageInfo.title}</span>
+            </h2>
+            <button
+              onClick={handleCreateNote}
+              className="p-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition"
+              title="New Note"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-              Authenticated Session Active
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Phase 1 acceptance check: Session and database rows successfully verified
-            </p>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {filteredNotes.map((note) => (
+              <NoteCard
+                key={note.id}
+                note={note}
+                isSelected={note.id === selectedNoteId}
+                onClick={() => navigate(`/note/${note.id}`)}
+              />
+            ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          {/* Profile Card */}
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">
-              <User className="w-4 h-4 text-indigo-500" />
-              <span>User Profile (from <code>profiles</code> table)</span>
-            </div>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-700/50">
-                <span className="text-slate-500">Display Name:</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">{profile?.display_name || 'Loading...'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-700/50">
-                <span className="text-slate-500">Email:</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">{user?.email}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-700/50">
-                <span className="text-slate-500">User ID (UUID):</span>
-                <span className="font-mono text-[11px] text-slate-600 dark:text-slate-400 truncate max-w-[180px]">{user?.id}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Account Created:</span>
-                <span className="text-slate-600 dark:text-slate-400">
-                  {profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : 'Just now'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* User Settings Card */}
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">
-              <Sliders className="w-4 h-4 text-indigo-500" />
-              <span>User Settings (from <code>user_settings</code> table)</span>
-            </div>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-700/50">
-                <span className="text-slate-500">Theme:</span>
-                <span className="font-medium capitalize text-slate-800 dark:text-slate-200">{settings?.theme || 'system'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-700/50">
-                <span className="text-slate-500">Font Size:</span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">{settings?.font_size ?? 16}px</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200/50 dark:border-slate-700/50">
-                <span className="text-slate-500">Auto Save:</span>
-                <span className="font-medium text-emerald-600 dark:text-emerald-400">{settings?.auto_save ? 'Enabled' : 'Disabled'}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Default Note Color:</span>
-                <span className="flex items-center gap-1 font-mono text-slate-600 dark:text-slate-400">
-                  <span
-                    className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-600 inline-block"
-                    style={{ backgroundColor: settings?.default_note_color || '#ffffff' }}
-                  />
-                  {settings?.default_note_color || '#ffffff'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Database & Trigger verification notice */}
-        <div className="p-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 text-xs text-indigo-900 dark:text-indigo-200 flex items-start gap-3">
-          <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-semibold">Automatic Profile Initialization Verified</p>
-            <p className="text-indigo-700 dark:text-indigo-300">
-              PostgreSQL trigger <code>on_auth_user_created</code> automatically inserted matching rows into <code>profiles</code> and <code>user_settings</code>. All RLS policies are actively enforced.
-            </p>
-          </div>
+        {/* Right Editor Pane */}
+        <div className="flex-1 h-full min-w-0">
+          <NoteEditor
+            noteId={selectedNoteId}
+            onClose={() => navigate(location.pathname.startsWith('/note') ? '/' : location.pathname)}
+          />
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col overflow-y-auto p-4 sm:p-6 lg:p-8">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center shadow-xs">
+            <PageIcon className={`w-5 h-5 ${pageInfo.color}`} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+              {pageInfo.title}
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {notes.length} {notes.length === 1 ? 'note' : 'notes'}
+            </p>
+          </div>
+        </div>
+
+        {/* Search & Actions */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search in view..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+            />
+          </div>
+
+          <button
+            onClick={handleCreateNote}
+            disabled={createNote.isPending}
+            className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-sm transition shrink-0 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Note</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Loading Skeleton */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 animate-pulse">
+          {[...Array(6)].map((_, i) => (
+            <div
+              key={i}
+              className="h-36 rounded-xl bg-slate-200/70 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800"
+            />
+          ))}
+        </div>
+      ) : filteredNotes.length === 0 ? (
+        /* Empty State */
+        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center my-auto">
+          <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center mb-4 text-slate-400">
+            {filter.type === 'favorites' ? (
+              <Star className="w-8 h-8 text-rose-400" />
+            ) : filter.type === 'archive' ? (
+              <Archive className="w-8 h-8 text-indigo-400" />
+            ) : filter.type === 'trash' ? (
+              <Trash2 className="w-8 h-8 text-amber-400" />
+            ) : (
+              <Inbox className="w-8 h-8 text-indigo-500" />
+            )}
+          </div>
+          <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-1">
+            {filter.type === 'favorites'
+              ? 'No favorite notes yet'
+              : filter.type === 'archive'
+              ? 'No archived notes'
+              : filter.type === 'trash'
+              ? 'Trash is empty'
+              : searchQuery
+              ? 'No matching notes found'
+              : 'You have no notes yet'}
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mb-6">
+            {filter.type === 'trash'
+              ? 'Notes you delete will appear here before being permanently removed.'
+              : filter.type === 'favorites'
+              ? 'Click the star icon on any note to add it to your favorites.'
+              : filter.type === 'archive'
+              ? 'Notes you archive are tucked away here safely.'
+              : 'Create your first note to start capturing your ideas and tasks.'}
+          </p>
+          {filter.type === 'all' && !searchQuery && (
+            <button
+              onClick={handleCreateNote}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium shadow-sm transition cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Create your first note</span>
+            </button>
+          )}
+        </div>
+      ) : (
+        /* Note Cards Grid */
+        <div className="space-y-6">
+          {/* Pinned Notes Section */}
+          {pinnedNotes.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 mb-3 uppercase tracking-wider">
+                <Pin className="w-3.5 h-3.5 fill-current" />
+                <span>Pinned</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {pinnedNotes.map((note) => (
+                  <NoteCard
+                    key={note.id}
+                    note={note}
+                    onClick={() => navigate(`/note/${note.id}`)}
+                    onTogglePin={(e) => {
+                      e.stopPropagation();
+                      updateNote.mutate({ id: note.id, is_pinned: !note.is_pinned });
+                    }}
+                    onToggleFavorite={(e) => {
+                      e.stopPropagation();
+                      updateNote.mutate({ id: note.id, is_favorite: !note.is_favorite });
+                    }}
+                    onToggleArchive={(e) => {
+                      e.stopPropagation();
+                      updateNote.mutate({ id: note.id, is_archived: !note.is_archived });
+                    }}
+                    onTrash={(e) => {
+                      e.stopPropagation();
+                      trashNote.mutate(note.id);
+                      success('Note moved to trash');
+                    }}
+                    onRestore={(e) => {
+                      e.stopPropagation();
+                      restoreNote.mutate(note.id);
+                      success('Note restored');
+                    }}
+                    onDeletePermanently={(e) => {
+                      e.stopPropagation();
+                      deletePermanently.mutate(note.id);
+                      success('Note permanently deleted');
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Regular Notes Section */}
+          <div>
+            {pinnedNotes.length > 0 && regularNotes.length > 0 && (
+              <div className="text-xs font-semibold text-slate-400 dark:text-slate-500 mb-3 uppercase tracking-wider">
+                Other Notes
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {regularNotes.map((note) => (
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  onClick={() => navigate(`/note/${note.id}`)}
+                  onTogglePin={(e) => {
+                    e.stopPropagation();
+                    updateNote.mutate({ id: note.id, is_pinned: !note.is_pinned });
+                  }}
+                  onToggleFavorite={(e) => {
+                    e.stopPropagation();
+                    updateNote.mutate({ id: note.id, is_favorite: !note.is_favorite });
+                  }}
+                  onToggleArchive={(e) => {
+                    e.stopPropagation();
+                    updateNote.mutate({ id: note.id, is_archived: !note.is_archived });
+                  }}
+                  onTrash={(e) => {
+                    e.stopPropagation();
+                    trashNote.mutate(note.id);
+                    success('Note moved to trash');
+                  }}
+                  onRestore={(e) => {
+                    e.stopPropagation();
+                    restoreNote.mutate(note.id);
+                    success('Note restored');
+                  }}
+                  onDeletePermanently={(e) => {
+                    e.stopPropagation();
+                    deletePermanently.mutate(note.id);
+                    success('Note permanently deleted');
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Action Button for Mobile */}
+      <button
+        onClick={handleCreateNote}
+        disabled={createNote.isPending}
+        className="sm:hidden fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg shadow-indigo-600/30 flex items-center justify-center transition active:scale-95 z-30"
+        aria-label="Create New Note"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
     </div>
   );
 }
