@@ -13,6 +13,7 @@ import {
   Minus,
   ImageIcon,
   Loader2,
+  PenTool,
 } from 'lucide-react';
 import { useRef } from 'react';
 
@@ -20,9 +21,17 @@ interface ToolbarProps {
   editor: Editor | null;
   onUploadImage?: (file: File) => void;
   isUploadingImage?: boolean;
+  onAddDrawing?: () => void;
+  isAddingDrawing?: boolean;
 }
 
-export function Toolbar({ editor, onUploadImage, isUploadingImage }: ToolbarProps) {
+export function Toolbar({
+  editor,
+  onUploadImage,
+  isUploadingImage,
+  onAddDrawing,
+  isAddingDrawing,
+}: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   if (!editor) return null;
 
@@ -211,6 +220,27 @@ export function Toolbar({ editor, onUploadImage, isUploadingImage }: ToolbarProp
             <span className="hidden sm:inline text-xs font-medium">Image</span>
           </button>
         </>
+      )}
+
+      {onAddDrawing && (
+        <button
+          type="button"
+          onClick={onAddDrawing}
+          disabled={isAddingDrawing}
+          className={`p-1.5 rounded-lg text-xs transition flex items-center gap-1.5 ${
+            isAddingDrawing
+              ? 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-800'
+              : 'hover:bg-slate-200/60 dark:hover:bg-slate-800'
+          }`}
+          title="Add drawing canvas"
+        >
+          {isAddingDrawing ? (
+            <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+          ) : (
+            <PenTool className="w-4 h-4" />
+          )}
+          <span className="hidden sm:inline text-xs font-medium">Drawing</span>
+        </button>
       )}
     </div>
   );

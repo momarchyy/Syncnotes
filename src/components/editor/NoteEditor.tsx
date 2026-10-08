@@ -45,6 +45,7 @@ import {
 } from '../../hooks/useTags';
 import { useAuth } from '../../contexts/AuthContext';
 import { StorageImageNode } from './StorageImageNode';
+import { DrawingNode } from './DrawingNode';
 import { uploadNoteImage } from '../../lib/imageUpload';
 import { ImageCropModal } from './ImageCropModal';
 import { supabase } from '../../lib/supabase';
@@ -81,6 +82,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [currentVersion, setCurrentVersion] = useState<number>(1);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isAddingDrawing, setIsAddingDrawing] = useState(false);
   const [pendingCropFile, setPendingCropFile] = useState<File | null>(null);
 
   // Folder & Tag dropdown open states
@@ -278,6 +280,39 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     handleInitiateImageUploadRef.current = handleInitiateImageUpload;
   }, [handleInitiateImageUpload]);
 
+  // Add drawing canvas handler (inserts row into drawings table then adds node)
+  const handleAddDrawing = useCallback(async () => {
+    setIsAddingDrawing(true);
+    try {
+      const { data, error: insertError } = await supabase
+        .from('drawings')
+        .insert({
+          note_id: noteId,
+          strokes: [],
+          width: 1200,
+          height: 800,
+        })
+        .select('id')
+        .single();
+
+      if (insertError) throw insertError;
+
+      if (data && editorRef.current) {
+        editorRef.current
+          .chain()
+          .focus()
+          .setDrawing({ drawingId: data.id })
+          .run();
+        success('Drawing canvas added');
+      }
+    } catch (err) {
+      console.error('Failed to create drawing:', err);
+      error((err as Error).message || 'Failed to create drawing');
+    } finally {
+      setIsAddingDrawing(false);
+    }
+  }, [noteId, error, success]);
+
   // Initialize Tiptap
   const editor = useEditor({
     extensions: [
@@ -292,6 +327,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         nested: true,
       }),
       StorageImageNode,
+      DrawingNode,
     ],
     content: '',
     editorProps: {
@@ -1016,6 +1052,8 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           editor={editor}
           onUploadImage={handleInitiateImageUpload}
           isUploadingImage={isUploadingImage}
+          onAddDrawing={handleAddDrawing}
+          isAddingDrawing={isAddingDrawing}
         />
       )}
 
