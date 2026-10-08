@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { getStroke } from 'perfect-freehand';
 import { supabase } from '../../lib/supabase';
 import { 
@@ -74,8 +75,21 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
   const [color, setColor] = useState<string>('#000000');
   const [size, setSize] = useState<number>(4);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [canvasHeight, setCanvasHeight] = useState<'compact' | 'normal' | 'tall'>('normal');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [showSavedFeedback, setShowSavedFeedback] = useState<boolean>(false);
+
+  // Escape key exits fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
 
   // Palm rejection tracking: if stylus/pen detected, reject touch
   const penDetectedRef = useRef<boolean>(false);
@@ -154,6 +168,8 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
             .from('drawings')
             .update({ strokes: newStrokes as any })
             .eq('id', drawingId);
+          setShowSavedFeedback(true);
+          setTimeout(() => setShowSavedFeedback(false), 1500);
         } catch (err) {
           console.error('Failed to save drawing strokes:', err);
         } finally {
@@ -346,16 +362,24 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
     triggerDebouncedSave([]);
   };
 
-  return (
+  const heightClasses = {
+    compact: 'h-[280px]',
+    normal: 'h-[440px]',
+    tall: 'h-[640px]',
+  };
+
+  const canvasContent = (
     <div
       ref={containerRef}
-      className={`relative my-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden select-none transition-all ${
-        isFullscreen ? 'fixed inset-0 z-50 rounded-none border-0' : 'w-full'
+      className={`relative rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden select-none transition-all flex flex-col ${
+        isFullscreen
+          ? 'fixed inset-0 z-[9999] w-screen h-screen rounded-none border-0'
+          : `w-full my-4 ${heightClasses[canvasHeight]}`
       }`}
     >
       {/* Top Toolbar */}
       {!readOnly && (
-        <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-xs text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-xs text-xs shrink-0">
           {/* Tools & Colors */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {/* Tool buttons */}
@@ -435,16 +459,44 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
                 className="w-16 h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
               />
             </div>
+
+            {/* Height Presets (Approach A) */}
+            {!isFullscreen && (
+              <div className="flex items-center gap-0.5 bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px]">
+                {(['compact', 'normal', 'tall'] as const).map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => setCanvasHeight(h)}
+                    className={`px-1.5 py-0.5 rounded capitalize font-medium transition cursor-pointer ${
+                      canvasHeight === h
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title={`Height: ${h}`}
+                  >
+                    {h === 'compact' ? 'S' : h === 'normal' ? 'M' : 'L'}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Actions & Utilities */}
           <div className="flex items-center gap-1">
-            {isSaving ? (
-              <span className="text-[11px] text-indigo-500 flex items-center gap-1 mr-1">
+            {/* Realtime Save Status Badge */}
+            {isSaving && (
+              <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 rounded-full border border-indigo-200 dark:border-indigo-800 mr-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                <span className="hidden sm:inline">Saving</span>
+                <span>Saving…</span>
               </span>
-            ) : null}
+            )}
+            {!isSaving && showSavedFeedback && (
+              <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 rounded-full border border-emerald-200 dark:border-emerald-800 mr-1 animate-fade-in">
+                <Check className="w-3 h-3" />
+                <span>Saved</span>
+              </span>
+            )}
 
             <button
               type="button"
@@ -479,7 +531,7 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
               type="button"
               onClick={() => setIsFullscreen((f) => !f)}
               className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700 cursor-pointer transition"
-              title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Canvas'}
+              title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Actual Fullscreen'}
             >
               {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
@@ -499,7 +551,7 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
       )}
 
       {/* Canvas Drawing Area */}
-      <div className="relative w-full aspect-3/2 bg-white dark:bg-slate-950 flex items-center justify-center overflow-hidden">
+      <div className="relative flex-1 w-full bg-white dark:bg-slate-950 flex items-center justify-center overflow-hidden">
         {isLoading ? (
           <div className="flex flex-col items-center gap-2 text-slate-400 text-xs">
             <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
@@ -521,4 +573,11 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
       </div>
     </div>
   );
+
+  // If in fullscreen mode, mount directly onto document.body via Portal for true fullscreen takeover
+  if (isFullscreen) {
+    return createPortal(canvasContent, document.body);
+  }
+
+  return canvasContent;
 }

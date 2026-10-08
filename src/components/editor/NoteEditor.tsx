@@ -20,8 +20,12 @@ import {
   CloudOff,
   Folder,
   Plus,
-  ChevronDown
+  ChevronDown,
+  Edit3,
+  BookOpen,
+  Highlighter,
 } from 'lucide-react';
+import { NoteAnnotationLayer } from './NoteAnnotationLayer';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Toolbar } from './Toolbar';
@@ -81,6 +85,8 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [title, setTitle] = useState('');
   const [currentVersion, setCurrentVersion] = useState<number>(1);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const [isEditing, setIsEditing] = useState(false); // Read mode by default
+  const [isAnnotating, setIsAnnotating] = useState(false); // Annotation mode
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isAddingDrawing, setIsAddingDrawing] = useState(false);
   const [pendingCropFile, setPendingCropFile] = useState<File | null>(null);
@@ -330,6 +336,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       DrawingNode,
     ],
     content: '',
+    editable: false,
     editorProps: {
       attributes: {
         class: 'prose dark:prose-invert max-w-none focus:outline-none min-h-[350px] p-4 text-slate-800 dark:text-slate-200 text-sm leading-relaxed',
@@ -411,9 +418,18 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   }, [note, editor]);
 
+  // Synchronize Tiptap editable state with isEditing toggle
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(isEditing);
+    }
+  }, [editor, isEditing]);
+
   // Reset content ref when switching notes
   useEffect(() => {
     initialContentSetRef.current = false;
+    setIsEditing(false); // Read mode by default when opening note
+    setIsAnnotating(false);
     setConflictOpen(false);
     setRemoteNote(null);
     setIncomingRemoteNote(null);
@@ -795,6 +811,46 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         {/* Action Controls */}
         <div className="flex items-center gap-1">
+          {/* Read / Edit Mode Toggle & Annotate Button */}
+          {!isDeleted && (
+            <>
+              <button
+                type="button"
+                onClick={() => setIsEditing((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                  isEditing
+                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+                title={isEditing ? 'Finish editing (Switch to Read Mode)' : 'Edit note'}
+              >
+                {isEditing ? (
+                  <>
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Done</span>
+                  </>
+                ) : (
+                  <>
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsAnnotating(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 transition cursor-pointer"
+                title="Freehand Annotate & Markup note (Approach C)"
+              >
+                <Highlighter className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden sm:inline">Annotate</span>
+              </button>
+
+              <div className="w-px h-4 bg-slate-200 dark:border-slate-800 mx-1" />
+            </>
+          )}
+
           {isDeleted ? (
             <>
               <button
@@ -913,8 +969,8 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           value={title}
           onChange={handleTitleChange}
           placeholder="Untitled Note"
-          disabled={isDeleted}
-          className="w-full text-2xl font-bold bg-transparent text-slate-900 dark:text-white placeholder-slate-300 dark:placeholder-slate-600 focus:outline-none tracking-tight disabled:opacity-75"
+          disabled={isDeleted || !isEditing}
+          className="w-full text-2xl font-bold bg-transparent text-slate-900 dark:text-white placeholder-slate-300 dark:placeholder-slate-600 focus:outline-none tracking-tight disabled:opacity-90 disabled:cursor-default"
         />
       </div>
 
@@ -1046,8 +1102,8 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         </div>
       )}
 
-      {/* Tiptap Toolbar */}
-      {!isDeleted && (
+      {/* Tiptap Toolbar - Only shown in Edit Mode */}
+      {!isDeleted && isEditing && (
         <Toolbar
           editor={editor}
           onUploadImage={handleInitiateImageUpload}
@@ -1111,6 +1167,13 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           setPendingCropFile(null);
           performImageUpload(processedFile);
         }}
+      />
+
+      {/* Note Freehand Annotation & Markup Layer (Approach C) */}
+      <NoteAnnotationLayer
+        noteId={noteId}
+        isOpen={isAnnotating}
+        onClose={() => setIsAnnotating(false)}
       />
     </div>
   );
