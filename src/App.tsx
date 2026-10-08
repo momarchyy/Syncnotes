@@ -9,6 +9,7 @@ import { Notes } from './pages/Notes';
 import { Search } from './pages/Search';
 import { Analytics } from './pages/Analytics';
 import { Activity } from './pages/Activity';
+import { Settings } from './pages/Settings';
 
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
@@ -52,7 +53,7 @@ export function App() {
                   <Route path="/search" element={<Search />} />
                   <Route path="/analytics" element={<Analytics />} />
                   <Route path="/activity" element={<Activity />} />
-                  <Route path="/settings" element={<Notes />} />
+                  <Route path="/settings" element={<Settings />} />
                 </Route>
               </Route>
 

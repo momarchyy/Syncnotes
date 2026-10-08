@@ -11,9 +11,10 @@
 | **versions** | `src/hooks/useVersions.ts`, `src/components/editor/VersionHistoryDrawer.tsx`, `src/components/editor/ConflictDialog.tsx`, `supabase/migrations/009_version_interval_10s.sql`, `supabase/migrations/010_fix_restore_version.sql`, `supabase/migrations/011_sequential_snapshot_numbering.sql` |
 | **sharing** | `src/hooks/useCollaborators.ts`, `src/components/editor/ShareModal.tsx`, `supabase/migrations/002_security.sql`, `supabase/migrations/006_fix_notes_policies.sql` |
 | **comments** | `src/hooks/useComments.ts`, `src/components/editor/CommentsDrawer.tsx`, `supabase/migrations/001_core.sql`, `supabase/migrations/002_security.sql`, `supabase/migrations/003_logic.sql` |
-| **search** | `src/hooks/useSearch.ts`, `src/pages/Search.tsx`, `src/pages/Notes.tsx`, `supabase/migrations/001_core.sql`, `supabase/migrations/003_logic.sql` |
+| **search** | `src/hooks/useSearch.ts`, `src/pages/Search.tsx`, `src/pages/Notes.tsx`, `supabase/migrations/001_core.sql`, `supabase/migrations/003_logic.sql`, `supabase/migrations/012_improve_search_notes.sql` |
 | **activity** | `src/hooks/useActivity.ts`, `src/pages/Activity.tsx`, `supabase/migrations/001_core.sql`, `supabase/migrations/002_security.sql`, `supabase/migrations/003_logic.sql` |
 | **analytics** | `src/hooks/useAnalytics.ts`, `src/pages/Analytics.tsx`, `supabase/migrations/004_views.sql` |
+| **settings** | `src/hooks/useSettings.ts`, `src/pages/Settings.tsx`, `supabase/migrations/001_core.sql`, `supabase/migrations/002_security.sql` |
 
 ---
 
@@ -36,7 +37,8 @@
 - `src/hooks/useComments.ts`: React Query hooks and realtime subscriptions for note discussion threads (`useNoteComments`, `useAddComment`, `useDeleteComment`).
 - `src/hooks/useFolders.ts`: React Query hooks for folder CRUD operations and folder breadcrumbs (`useFolders`, `useFolder`, `useFolderPath`, `useCreateFolder`, `useUpdateFolder`, `useDeleteFolder`).
 - `src/hooks/useNotes.ts`: React Query hooks for note querying, filtering, mutations, and realtime sync (`useNotes`, `useNote`, `useCreateNote`, `useUpdateNote`, `useSaveNote`, `useTrashNote`, `useRestoreNote`, `useDeleteNotePermanently`, `useSetNoteFolder`, `useNotesRealtime`).
-- `src/hooks/useSearch.ts`: React Query hook for full-text search RPC and headline sanitizer (`useSearchNotes`, `sanitizeHeadline`).
+- `src/hooks/useSearch.ts`: React Query hook for full-text and partial substring search with scoring (`useSearchNotes`, `sanitizeHeadline`).
+- `src/hooks/useSettings.ts`: React Query mutations for profile display name, theme, and editor preferences (`useSettings`).
 - `src/hooks/useTags.ts`: React Query hooks for creating, deleting, and assigning tags to notes (`useTags`, `useNoteTags`, `useCreateTag`, `useDeleteTag`, `useAddTagToNote`, `useRemoveTagFromNote`).
 - `src/hooks/useVersions.ts`: React Query hooks for fetching note snapshot history and restoring past versions (`useNoteVersions`, `useRestoreVersion`).
 
@@ -53,7 +55,8 @@
 - `src/pages/Analytics.tsx`: Metrics view displaying stat cards and SVG/CSS charts for notes and tag activity (`Analytics`).
 - `src/pages/Auth.tsx`: User authentication view for sign-in, registration, and OAuth flows (`Auth`).
 - `src/pages/Notes.tsx`: Main dashboard managing the note list, search/filter views, and note editor mounting (`Notes`).
-- `src/pages/Search.tsx`: Dedicated full-text search page with debounced query and highlighted snippets (`Search`).
+- `src/pages/Search.tsx`: Dedicated search page with sorting, filter dropdowns, debounced query, and highlighted title/snippet matches (`Search`).
+- `src/pages/Settings.tsx`: User profile, theme switcher, base font size, and autosave management page (`Settings`).
 
 ### `src/components/layout/`
 - `src/components/layout/Layout.tsx`: Root dashboard shell organizing top bar, sidebar, and child route outlets (`Layout`).
@@ -94,3 +97,4 @@
 - `supabase/migrations/009_version_interval_10s.sql`: Adjusted version history snapshot capture throttle interval to 10 seconds.
 - `supabase/migrations/010_fix_restore_version.sql`: Stored procedure `restore_note_version` and RLS permission fixes for note restoration.
 - `supabase/migrations/011_sequential_snapshot_numbering.sql`: Stored procedure snapshot interval set to 1 minute with continuous version numbering.
+- `supabase/migrations/012_improve_search_notes.sql`: Stored procedure `search_notes` supporting prefix queries, title matches, and boosted relevance.
