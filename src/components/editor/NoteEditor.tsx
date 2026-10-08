@@ -24,8 +24,10 @@ import {
   Edit3,
   BookOpen,
   Highlighter,
+  History,
 } from 'lucide-react';
 import { NoteAnnotationLayer } from './NoteAnnotationLayer';
+import { VersionHistoryDrawer } from './VersionHistoryDrawer';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Toolbar } from './Toolbar';
@@ -87,6 +89,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [isEditing, setIsEditing] = useState(false); // Read mode by default
   const [isAnnotating, setIsAnnotating] = useState(false); // Annotation mode
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isAddingDrawing, setIsAddingDrawing] = useState(false);
   const [pendingCropFile, setPendingCropFile] = useState<File | null>(null);
@@ -906,6 +909,15 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
               <button
                 type="button"
+                onClick={() => setVersionHistoryOpen(true)}
+                title="Version History & Snapshots"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <History className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
                 onClick={handleToggleArchive}
                 title={note.is_archived ? 'Unarchive note' : 'Archive note'}
                 className={`p-1.5 rounded-lg transition ${
@@ -1179,6 +1191,20 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         isOpen={isAnnotating}
         onClose={() => setIsAnnotating(false)}
         targetRef={noteContainerRef}
+      />
+
+      {/* Version History Drawer (Phase 8) */}
+      <VersionHistoryDrawer
+        noteId={noteId}
+        isOpen={versionHistoryOpen}
+        onClose={() => setVersionHistoryOpen(false)}
+        currentVersionNo={currentVersion}
+        onVersionRestored={(restoredVersionNo) => {
+          setCurrentVersion(restoredVersionNo);
+          versionRef.current = restoredVersionNo;
+          isDirtyRef.current = false;
+          initialContentSetRef.current = false; // re-sync editor content from restored note
+        }}
       />
     </div>
   );
