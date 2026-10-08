@@ -33,6 +33,7 @@ import { NoteAnnotationLayer } from './NoteAnnotationLayer';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
 import { ShareModal } from './ShareModal';
 import { CommentsDrawer } from './CommentsDrawer';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useNoteRole } from '../../hooks/useCollaborators';
 import { useNoteComments } from '../../hooks/useComments';
 import { useNavigate } from 'react-router-dom';
@@ -483,8 +484,9 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   useEffect(() => {
     if (!noteId) return;
 
+    const channelId = `note-editor-realtime-${noteId}-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase
-      .channel(`note-editor-realtime-${noteId}`)
+      .channel(channelId)
       .on(
         'postgres_changes',
         {
@@ -1266,13 +1268,15 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       />
 
       {/* Realtime Comments Drawer (Phase 9) */}
-      <CommentsDrawer
-        isOpen={commentsDrawerOpen}
-        onClose={() => setCommentsDrawerOpen(false)}
-        noteId={noteId}
-        canComment={canComment}
-        isOwner={isOwner}
-      />
+      <ErrorBoundary fallbackMessage="Unable to load comments at this time.">
+        <CommentsDrawer
+          isOpen={commentsDrawerOpen}
+          onClose={() => setCommentsDrawerOpen(false)}
+          noteId={noteId}
+          canComment={canComment}
+          isOwner={isOwner}
+        />
+      </ErrorBoundary>
     </div>
   );
 }

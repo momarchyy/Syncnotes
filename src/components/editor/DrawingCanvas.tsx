@@ -131,8 +131,9 @@ export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: Drawing
 
   // 2. Realtime sync subscription for collaborative drawings
   useEffect(() => {
+    const channelId = `drawing-${drawingId}-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase
-      .channel(`drawing-${drawingId}`)
+      .channel(channelId)
       .on(
         'postgres_changes',
         {

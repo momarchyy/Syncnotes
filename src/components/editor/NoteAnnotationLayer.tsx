@@ -129,8 +129,9 @@ export function NoteAnnotationLayer({
   useEffect(() => {
     if (!drawingRecordId) return;
 
+    const channelId = `annotation-${drawingRecordId}-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase
-      .channel(`annotation-${drawingRecordId}`)
+      .channel(channelId)
       .on(
         'postgres_changes',
         {

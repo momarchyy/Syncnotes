@@ -6,6 +6,11 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { Layout } from './components/layout/Layout';
 import { Auth } from './pages/Auth';
 import { Notes } from './pages/Notes';
+import { Search } from './pages/Search';
+import { Analytics } from './pages/Analytics';
+import { Activity } from './pages/Activity';
+
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,10 +23,11 @@ const queryClient = new QueryClient({
 
 export function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <ToastProvider>
-          <BrowserRouter>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ToastProvider>
+            <BrowserRouter>
             <Routes>
               {/* Public Route */}
               <Route path="/auth" element={<Auth />} />
@@ -43,9 +49,9 @@ export function App() {
                   <Route path="/folder/:folderId/note/:id" element={<Notes />} />
                   <Route path="/tag/:tagId" element={<Notes />} />
                   <Route path="/tag/:tagId/note/:id" element={<Notes />} />
-                  <Route path="/search" element={<Notes />} />
-                  <Route path="/analytics" element={<Notes />} />
-                  <Route path="/activity" element={<Notes />} />
+                  <Route path="/search" element={<Search />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/activity" element={<Activity />} />
                   <Route path="/settings" element={<Notes />} />
                 </Route>
               </Route>
@@ -57,6 +63,7 @@ export function App() {
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

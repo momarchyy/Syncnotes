@@ -13,7 +13,6 @@ export interface Collaborator {
   profiles?: {
     id: string;
     display_name: string | null;
-    avatar_url: string | null;
   } | null;
 }
 
@@ -28,7 +27,7 @@ export function useCollaborators(noteId: string | undefined) {
 
       const { data, error } = await supabase
         .from('note_collaborators')
-        .select('note_id, user_id, role, created_at, profiles(id, display_name, avatar_url)')
+        .select('note_id, user_id, role, created_at, profiles(id, display_name)')
         .eq('note_id', noteId)
         .order('created_at', { ascending: true });
 

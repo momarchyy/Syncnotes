@@ -8,7 +8,6 @@ export type Comment = Database['public']['Tables']['comments']['Row'] & {
   profiles?: {
     id: string;
     display_name: string | null;
-    avatar_url: string | null;
   } | null;
 };
 
@@ -22,15 +21,15 @@ export function useNoteComments(noteId: string | undefined) {
   useEffect(() => {
     if (!noteId) return;
 
+    const channelId = `note-comments-${noteId}-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase
-      .channel(`note-comments-${noteId}`)
+      .channel(channelId)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'comments',
-          filter: `note_id=eq.${noteId}`,
         },
         () => {
           queryClient.invalidateQueries({ queryKey: ['comments', noteId] });
@@ -50,7 +49,7 @@ export function useNoteComments(noteId: string | undefined) {
 
       const { data, error } = await supabase
         .from('comments')
-        .select('*, profiles(id, display_name, avatar_url)')
+        .select('*, profiles(id, display_name)')
         .eq('note_id', noteId)
         .order('created_at', { ascending: true });
 
@@ -86,7 +85,7 @@ export function useAddComment() {
           author_id: user.id,
           body: trimmed,
         })
-        .select('*, profiles(id, display_name, avatar_url)')
+        .select('*, profiles(id, display_name)')
         .single();
 
       if (error) throw error;

@@ -258,8 +258,9 @@ export function useNotesRealtime() {
   useEffect(() => {
     if (!user) return;
 
+    const channelId = `notes-realtime-list-${user.id}-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase
-      .channel(`notes-realtime-list-${user.id}`)
+      .channel(channelId)
       .on(
         'postgres_changes',
         {

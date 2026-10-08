@@ -19,6 +19,7 @@ import { useFolder, useFolderPath } from '../hooks/useFolders';
 import { useTag, useAddTagToNote } from '../hooks/useTags';
 import { NoteCard } from '../components/notes/NoteCard';
 import { NoteEditor } from '../components/editor/NoteEditor';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useToast } from '../components/ui/Toast';
 
 export function Notes() {
@@ -176,10 +177,12 @@ export function Notes() {
 
         {/* Right Editor Pane */}
         <div className="flex-1 h-full min-w-0">
-          <NoteEditor
-            noteId={selectedNoteId}
-            onClose={() => navigate(getBackUrl())}
-          />
+          <ErrorBoundary fallbackMessage="The editor encountered an unexpected error.">
+            <NoteEditor
+              noteId={selectedNoteId}
+              onClose={() => navigate(getBackUrl())}
+            />
+          </ErrorBoundary>
         </div>
       </div>
     );
@@ -226,9 +229,14 @@ export function Notes() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search in view..."
+              placeholder="Search in view (Enter for all)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchQuery.trim()) {
+                  navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                }
+              }}
               className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
             />
           </div>

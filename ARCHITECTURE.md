@@ -1,5 +1,11 @@
 # SyncNotes: Project Spec and Build Instructions
 
+## Working rules for the agent
+- Before any task, read CODEMAP.md first and open only the files it points to for that task.
+- Do not scan or summarize the whole codebase unless I explicitly ask.
+- After you add, delete, rename, or significantly change a file, update its line in CODEMAP.md in the same change.
+- Make the smallest change that solves the request. Do not refactor unrelated code.
+
 > **For the AI agent (Gemini in Antigravity):** This file is the single source of truth for the project. Read ALL of it before writing any code. Follow the rules in Section 2 strictly. Build in the phases from Section 8, and **stop at every checkpoint** to report what you did and wait for the user. Do not skip ahead.
 
 ## 0. Kickoff prompt (the user pastes this into Antigravity)

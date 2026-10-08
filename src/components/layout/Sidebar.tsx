@@ -14,7 +14,8 @@ import {
   FolderOpen,
   ChevronRight,
   ChevronDown,
-  Edit2
+  Edit2,
+  Search
 } from 'lucide-react';
 import { useCreateNote } from '../../hooks/useNotes';
 import { 
@@ -213,6 +214,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
 
   const navItems = [
     { label: 'All Notes', to: '/', icon: FileText },
+    { label: 'Search', to: '/search', icon: Search },
     { label: 'Favorites', to: '/favorites', icon: Star },
     { label: 'Shared with me', to: '/shared', icon: Users },
     { label: 'Archive', to: '/archive', icon: Archive },
