@@ -13,13 +13,28 @@ import {
   RotateCcw, 
   ArrowLeft, 
   Check, 
-  Loader2 
+  Loader2,
+  AlertTriangle,
+  CloudOff
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Toolbar } from './Toolbar';
-import { useNote, useUpdateNote, useTrashNote, useRestoreNote, useDeleteNotePermanently } from '../../hooks/useNotes';
+import { ConflictDialog } from './ConflictDialog';
+import { 
+  useNote, 
+  useUpdateNote, 
+  useTrashNote, 
+  useRestoreNote, 
+  useDeleteNotePermanently,
+  useCreateNote,
+  type Note
+} from '../../hooks/useNotes';
+import { supabase } from '../../lib/supabase';
 import { useToast } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
 import type { Json } from '../../types/database';
+
+export type SaveStatus = 'saved' | 'saving' | 'offline' | 'conflict';
 
 interface NoteEditorProps {
   noteId: string;
@@ -27,15 +42,23 @@ interface NoteEditorProps {
 }
 
 export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
+  const navigate = useNavigate();
   const { data: note, isLoading } = useNote(noteId);
   const updateNote = useUpdateNote();
   const trashNote = useTrashNote();
   const restoreNote = useRestoreNote();
   const deletePermanently = useDeleteNotePermanently();
+  const createNote = useCreateNote();
   const { success, error } = useToast();
 
   const [title, setTitle] = useState('');
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
+  const [currentVersion, setCurrentVersion] = useState<number>(1);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+
+  // Conflict handling state
+  const [conflictOpen, setConflictOpen] = useState(false);
+  const [remoteNote, setRemoteNote] = useState<Note | null>(null);
+  const [isResolvingConflict, setIsResolvingConflict] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -70,6 +93,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   useEffect(() => {
     if (note) {
       setTitle(note.title);
+      setCurrentVersion(note.version);
       if (editor && !initialContentSetRef.current) {
         if (note.content && typeof note.content === 'object' && Object.keys(note.content).length > 0) {
           editor.commands.setContent(note.content as JSONContent);
@@ -84,11 +108,54 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   // Reset content ref when switching notes
   useEffect(() => {
     initialContentSetRef.current = false;
+    setConflictOpen(false);
+    setRemoteNote(null);
+    setSaveStatus('saved');
   }, [noteId]);
 
-  // Debounced save
+  // Online / offline listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      if (saveStatus === 'offline') triggerSave(title);
+    };
+    const handleOffline = () => setSaveStatus('offline');
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [saveStatus, title]);
+
+  // Fetch the latest remote version when a conflict occurs
+  const handleConflictDetected = async () => {
+    setSaveStatus('conflict');
+    try {
+      const { data: latest } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('id', noteId)
+        .single();
+
+      if (latest) {
+        setRemoteNote(latest);
+        setConflictOpen(true);
+      }
+    } catch (err) {
+      console.error('Error fetching latest note for conflict resolution:', err);
+    }
+  };
+
+  // Debounced save using save_note RPC (Section 7.3: 1500 ms)
   const triggerSave = useCallback(
     (newTitle: string, newContent?: Json, newContentText?: string) => {
+      if (!navigator.onLine) {
+        setSaveStatus('offline');
+        return;
+      }
+
       setSaveStatus('saving');
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
@@ -97,27 +164,121 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           const contentToSave = newContent ?? (editor ? (editor.getJSON() as Json) : note?.content ?? {});
           const textToSave = newContentText ?? (editor ? editor.getText() : note?.content_text ?? '');
 
-          await updateNote.mutateAsync({
-            id: noteId,
-            title: newTitle.trim() || 'Untitled',
-            content: contentToSave,
-            content_text: textToSave,
-            updated_at: new Date().toISOString(),
+          const { data: savedNote, error: rpcError } = await supabase.rpc('save_note', {
+            p_note_id: noteId,
+            p_expected_version: currentVersion,
+            p_title: newTitle.trim() || 'Untitled',
+            p_content: contentToSave,
+            p_content_text: textToSave,
           });
-          setSaveStatus('saved');
+
+          if (rpcError) {
+            // Check for Postgres SQLSTATE 40001 (VERSION_CONFLICT)
+            if (rpcError.code === '40001' || rpcError.message?.includes('VERSION_CONFLICT')) {
+              await handleConflictDetected();
+              return;
+            }
+            throw new Error(rpcError.message);
+          }
+
+          if (savedNote) {
+            setCurrentVersion(savedNote.version);
+            setSaveStatus('saved');
+          }
         } catch (err) {
-          error((err as Error).message || 'Failed to save note');
-          setSaveStatus('saved');
+          if (!navigator.onLine) {
+            setSaveStatus('offline');
+          } else {
+            error((err as Error).message || 'Failed to save note');
+            setSaveStatus('saved');
+          }
         }
-      }, 1000);
+      }, 1500);
     },
-    [noteId, updateNote, editor, note, error]
+    [noteId, currentVersion, editor, note, error]
   );
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
     setTitle(newTitle);
     triggerSave(newTitle);
+  };
+
+  // Conflict Resolution: Keep Mine (Overwrite remote note with local version)
+  const handleResolveKeepMine = async () => {
+    if (!remoteNote) return;
+    setIsResolvingConflict(true);
+    try {
+      const contentToSave = editor ? (editor.getJSON() as Json) : {};
+      const textToSave = editor ? editor.getText() : '';
+
+      const { data: savedNote, error: rpcError } = await supabase.rpc('save_note', {
+        p_note_id: noteId,
+        p_expected_version: remoteNote.version,
+        p_title: title.trim() || 'Untitled',
+        p_content: contentToSave,
+        p_content_text: textToSave,
+      });
+
+      if (rpcError) throw new Error(rpcError.message);
+
+      if (savedNote) {
+        setCurrentVersion(savedNote.version);
+        setSaveStatus('saved');
+        setConflictOpen(false);
+        success('Resolved: Your version was saved.');
+      }
+    } catch (err) {
+      error((err as Error).message || 'Failed to overwrite note');
+    } finally {
+      setIsResolvingConflict(false);
+    }
+  };
+
+  // Conflict Resolution: Take Theirs (Discard local changes and load database version)
+  const handleResolveTakeTheirs = () => {
+    if (!remoteNote) return;
+    setTitle(remoteNote.title);
+    setCurrentVersion(remoteNote.version);
+
+    if (editor) {
+      if (remoteNote.content && typeof remoteNote.content === 'object' && Object.keys(remoteNote.content).length > 0) {
+        editor.commands.setContent(remoteNote.content as JSONContent);
+      } else {
+        editor.commands.setContent('');
+      }
+    }
+
+    setSaveStatus('saved');
+    setConflictOpen(false);
+    success('Resolved: Loaded latest version from database.');
+  };
+
+  // Conflict Resolution: Copy Mine to a New Note
+  const handleResolveCopyMine = async () => {
+    setIsResolvingConflict(true);
+    try {
+      const contentToSave = editor ? (editor.getJSON() as Json) : {};
+      const textToSave = editor ? editor.getText() : '';
+
+      const newNote = await createNote.mutateAsync({
+        title: `${title || 'Untitled'} (My Version)`,
+      });
+
+      // Save our local content into the new note
+      await supabase.from('notes').update({
+        content: contentToSave,
+        content_text: textToSave,
+      }).eq('id', newNote.id);
+
+      setConflictOpen(false);
+      success('Created a new note with your version.');
+      navigate(`/note/${newNote.id}`);
+    } catch (err) {
+      error((err as Error).message || 'Failed to copy note');
+    } finally {
+      setIsResolvingConflict(false);
+    }
   };
 
   const handleTogglePin = async () => {
@@ -230,18 +391,36 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             </button>
           )}
 
-          {/* Save Status Chip */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-            {saveStatus === 'saving' ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+          {/* Save Status Chip (Section 7.3: Saving / Saved / Offline / Conflict) */}
+          <div>
+            {saveStatus === 'saving' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 text-xs font-medium border border-indigo-200/50 dark:border-indigo-800/50">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Saving…</span>
-              </>
-            ) : (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Saved</span>
-              </>
+              </div>
+            )}
+            {saveStatus === 'saved' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 text-xs font-medium border border-emerald-200/50 dark:border-emerald-800/50">
+                <Check className="w-3.5 h-3.5" />
+                <span>Saved (v{currentVersion})</span>
+              </div>
+            )}
+            {saveStatus === 'offline' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-medium border border-slate-200 dark:border-slate-700">
+                <CloudOff className="w-3.5 h-3.5" />
+                <span>Offline</span>
+              </div>
+            )}
+            {saveStatus === 'conflict' && (
+              <button
+                type="button"
+                onClick={() => setConflictOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 hover:bg-red-100 text-xs font-semibold border border-red-300 dark:border-red-800 transition animate-pulse cursor-pointer"
+                title="Click to resolve conflict"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Conflict (Resolve)</span>
+              </button>
             )}
           </div>
         </div>
@@ -342,6 +521,19 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       <div className="flex-1 overflow-y-auto px-2">
         <EditorContent editor={editor} />
       </div>
+
+      {/* Conflict Resolution Dialog */}
+      <ConflictDialog
+        isOpen={conflictOpen}
+        onClose={() => setConflictOpen(false)}
+        localTitle={title}
+        localContentText={editor ? editor.getText() : ''}
+        remoteNote={remoteNote}
+        onKeepMine={handleResolveKeepMine}
+        onTakeTheirs={handleResolveTakeTheirs}
+        onCopyMine={handleResolveCopyMine}
+        isResolving={isResolvingConflict}
+      />
 
       {/* Confirmation Modal for Permanent Delete */}
       <Modal
