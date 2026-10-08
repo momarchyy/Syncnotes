@@ -31,6 +31,7 @@ interface DrawingCanvasProps {
   drawingId: string;
   noteId?: string;
   readOnly?: boolean;
+  onDelete?: () => void;
 }
 
 const LOGICAL_WIDTH = 1200;
@@ -61,7 +62,7 @@ function getSvgPathFromStroke(stroke: number[][]): string {
   return d.join(' ');
 }
 
-export function DrawingCanvas({ drawingId, readOnly = false }: DrawingCanvasProps) {
+export function DrawingCanvas({ drawingId, readOnly = false, onDelete }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -259,7 +260,7 @@ export function DrawingCanvas({ drawingId, readOnly = false }: DrawingCanvasProp
     } else {
       currentStrokeRef.current = {
         tool: currentTool,
-        color: currentTool === 'highlighter' && color === '#000000' ? '#f59e0b' : color,
+        color,
         size,
         points: [[x, y, pressure]],
       };
@@ -468,8 +469,8 @@ export function DrawingCanvas({ drawingId, readOnly = false }: DrawingCanvasProp
             <button
               type="button"
               onClick={handleClear}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer transition"
-              title="Clear all strokes"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer transition"
+              title="Clear strokes"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -482,6 +483,17 @@ export function DrawingCanvas({ drawingId, readOnly = false }: DrawingCanvasProp
             >
               {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
+
+            {onDelete && !isFullscreen && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer transition ml-0.5 border-l border-slate-200 dark:border-slate-800 pl-1.5"
+                title="Delete drawing canvas from note"
+              >
+                <Trash2 className="w-4 h-4 text-rose-500" />
+              </button>
+            )}
           </div>
         </div>
       )}
