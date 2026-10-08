@@ -17,7 +17,7 @@ interface VersionHistoryDrawerProps {
   noteId: string;
   isOpen: boolean;
   onClose: () => void;
-  currentVersionNo: number;
+  currentVersionNo?: number;
   onVersionRestored?: (restoredVersionNo: number) => void;
 }
 
@@ -25,7 +25,6 @@ export function VersionHistoryDrawer({
   noteId,
   isOpen,
   onClose,
-  currentVersionNo,
   onVersionRestored,
 }: VersionHistoryDrawerProps) {
   const { data: versions = [], isLoading, error } = useNoteVersions(noteId);
@@ -105,13 +104,12 @@ export function VersionHistoryDrawer({
 
               {!isLoading && versions.length === 0 && (
                 <div className="p-6 text-center text-xs text-slate-400 italic">
-                  No previous snapshots yet. Snapshots are recorded when editing continues past 2 minutes.
+                  No previous snapshots yet. Snapshots are recorded when editing continues past 1 minute.
                 </div>
               )}
 
               {versions.map((ver) => {
                 const isSelected = activePreview?.version_no === ver.version_no;
-                const isCurrent = ver.version_no === currentVersionNo;
                 const author = (ver as any).profiles?.display_name || 'You';
 
                 return (
@@ -128,11 +126,6 @@ export function VersionHistoryDrawer({
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                         <span>Version {ver.version_no}</span>
-                        {isCurrent && (
-                          <span className="text-[10px] px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-md font-medium">
-                            Current
-                          </span>
-                        )}
                       </span>
                       <span className="text-[10px] text-slate-400">
                         {formatDistanceToNow(new Date(ver.created_at), { addSuffix: true })}

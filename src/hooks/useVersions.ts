@@ -14,20 +14,14 @@ export function useNoteVersions(noteId: string | undefined) {
       if (!noteId) return [];
       const { data, error } = await supabase
         .from('note_versions')
-        .select(`
-          note_id,
-          version_no,
-          title,
-          content,
-          content_text,
-          saved_by,
-          created_at,
-          profiles:saved_by(display_name, avatar_url)
-        `)
+        .select('*')
         .eq('note_id', noteId)
         .order('version_no', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching note_versions:', error);
+        throw error;
+      }
       return data || [];
     },
     enabled: !!noteId,
